@@ -3,7 +3,6 @@ plugins {
 	id 'maven-publish'
 	id "io.freefair.lombok" version '6.6.+' apply false
 	id 'com.modrinth.minotaur' version '2.+' apply false
-	id 'org.quiltmc.gradle.licenser' version '1.+'
 }
 
 archivesBaseName = project.archives_base_name
@@ -47,7 +46,6 @@ subprojects {
 	apply plugin: "maven-publish"
 	apply plugin: "io.freefair.lombok"
 	apply plugin: 'com.modrinth.minotaur'
-	apply plugin: 'org.quiltmc.gradle.licenser'
 
 	java {
 		withSourcesJar()
@@ -57,11 +55,6 @@ subprojects {
 		filesMatching('LICENSE') {
 			rename '^(LICENSE.*?)(\\..*)?$', "\$1_${archivesBaseName}\$2"
 		}
-	}
-
-	license {
-		rule file('../HEADER')
-		include '**/*.java'
 	}
 }
 
