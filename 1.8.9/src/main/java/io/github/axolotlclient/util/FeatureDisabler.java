@@ -24,6 +24,7 @@ package io.github.axolotlclient.util;
 
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 import com.google.gson.JsonArray;
@@ -34,80 +35,34 @@ import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
 import io.github.axolotlclient.modules.freelook.Freelook;
 import io.github.axolotlclient.modules.hud.HudManager;
 import io.github.axolotlclient.modules.hud.gui.hud.simple.ToggleSprintHud;
-import net.legacyfabric.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.legacyfabric.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.resource.language.I18n;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
+import org.quiltmc.qsl.networking.api.client.ClientPlayConnectionEvents;
+import org.quiltmc.qsl.networking.api.client.ClientPlayNetworking;
 
 public class FeatureDisabler {
 
-	private static final HashMap<BooleanOption, String[]> disabledServers = new HashMap<>();
-	private static final HashMap<BooleanOption, Supplier<Boolean>> conditions = new HashMap<>();
-
-	private static final Supplier<Boolean> NONE = () -> true;
-	private static final Identifier channelName = new Identifier("axolotlclient", "block_mods");
-	// Features that can be disabled on the server's behalf
-	// If something should be added here, feel free to ping us via your favorite way.
-	private static final HashMap<String, BooleanOption> features = Util.make(() -> {
-		HashMap<String, BooleanOption> features = new HashMap<>();
-		features.put("freelook", Freelook.getInstance().enabled);
-		features.put("timechanger", AxolotlClient.CONFIG.timeChangerEnabled);
-		features.put("fullbright", AxolotlClient.CONFIG.fullBright);
-		features.put("lowfire", AxolotlClient.CONFIG.lowFire);
-		return features;
-	});
-	private static String currentAddress = "";
-
 	public static void init() {
-		setServers(AxolotlClient.CONFIG.lowFire, NONE, "gommehd");
-		setServers(AxolotlClient.CONFIG.timeChangerEnabled, NONE, "gommehd");
-		setServers(Freelook.getInstance().enabled, () -> Freelook.getInstance().needsDisabling(), "hypixel", "mineplex", "gommehd", "nucleoid");
-		setServers(((ToggleSprintHud) HudManager.getInstance().get(ToggleSprintHud.ID)).toggleSneak, NONE, "hypixel");
-
-		ClientPlayConnectionEvents.INIT.register((handler0, client0) ->
-			ClientPlayNetworking.registerGlobalReceiver(channelName.toString(), (client, handler, buf, responseSender) -> {
-				JsonArray array = new JsonParser().parse(buf.readString(32767)).getAsJsonArray();
-				for (JsonElement element : array) {
-					try {
-						features.get(element.getAsString()).setForceOff(true, "ban_reason");
-					} catch (Exception e) {
-						AxolotlClient.LOGGER.error("Failed to disable " + element.getAsString() + "!");
-					}
-				}
-			})
-		);
+		return;
 	}
 
 	private static void setServers(BooleanOption option, Supplier<Boolean> condition, String... servers) {
-		disabledServers.put(option, servers);
-		conditions.put(option, condition);
+		return;
 	}
 
 	public static void onServerJoin(String address) {
-		currentAddress = address;
-		update();
-	}
-
-	public static void update() {
-		disabledServers.forEach((option, strings) -> disableOption(option, strings, currentAddress));
-	}
-
-	private static void disableOption(BooleanOption option, String[] servers, String currentServer) {
-		boolean ban = false;
-		for (String s : servers) {
-			if (currentServer.toLowerCase(Locale.ROOT).contains(s.toLowerCase(Locale.ROOT))) {
-				ban = conditions.get(option).get();
-				break;
-			}
-		}
-
-		if (option.getForceDisabled() != ban) {
-			option.setForceOff(ban, I18n.translate("ban_reason"));
-		}
+		return;
 	}
 
 	public static void clear() {
-		disabledServers.keySet().forEach(option -> option.setForceOff(false, ""));
-		features.values().forEach(option -> option.setForceOff(false, ""));
+		return;
+	}
+
+	public static void update() {
+		return;
+	}
+
+	private static void disableOption(BooleanOption option, String[] servers, String currentServer) {
+		return;
 	}
 }
