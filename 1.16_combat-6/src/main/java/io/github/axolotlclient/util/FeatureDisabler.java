@@ -22,26 +22,11 @@
 
 package io.github.axolotlclient.util;
 
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Objects;
 import java.util.function.Supplier;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
-import io.github.axolotlclient.AxolotlClient;
 import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.modules.freelook.Freelook;
-import io.github.axolotlclient.modules.hud.HudManager;
-import io.github.axolotlclient.modules.hud.gui.hud.simple.ToggleSprintHud;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Util;
-import org.quiltmc.qsl.networking.api.client.ClientPlayConnectionEvents;
-import org.quiltmc.qsl.networking.api.client.ClientPlayNetworking;
 
 public class FeatureDisabler {
-
 	public static void init() {
 		return;
 	}
