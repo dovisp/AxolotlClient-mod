@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -26,15 +26,19 @@ import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.util.List;
 
-import io.github.axolotlclient.AxolotlClientConfig.Color;
-import io.github.axolotlclient.AxolotlClientConfig.options.*;
+import io.github.axolotlclient.AxolotlClientConfig.api.options.Option;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.*;
 import io.github.axolotlclient.modules.hud.gui.component.DynamicallyPositionable;
 import io.github.axolotlclient.modules.hud.gui.entry.TextHudEntry;
 import io.github.axolotlclient.modules.hud.gui.layout.AnchorPoint;
 import io.github.axolotlclient.modules.hud.util.DrawPosition;
-import net.minecraft.client.font.TextRenderer;
+import io.github.axolotlclient.util.ClientColors;
+import net.minecraft.client.resource.language.I18n;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.registry.Registry;
+import net.minecraft.world.biome.BiomeKeys;
 
 /**
  * This implementation of Hud modules is based on KronHUD.
@@ -47,107 +51,19 @@ public class CoordsHud extends TextHudEntry implements DynamicallyPositionable {
 
 	public static final Identifier ID = new Identifier("kronhud", "coordshud");
 
-	private final ColorOption secondColor = new ColorOption("secondtextcolor", Color.WHITE);
-	private final ColorOption firstColor = new ColorOption("firsttextcolor", Color.SELECTOR_BLUE);
-	private final IntegerOption decimalPlaces = new IntegerOption("decimalplaces", ID.getPath(), 0, 0, 15);
+	private final ColorOption secondColor = new ColorOption("secondtextcolor", ClientColors.WHITE);
+	private final ColorOption firstColor = new ColorOption("firsttextcolor", ClientColors.SELECTOR_BLUE);
+	private final IntegerOption decimalPlaces = new IntegerOption("decimalplaces", 0, 0, 15);
 	private final BooleanOption minimal = new BooleanOption("minimal", false);
+	private final BooleanOption biome = new BooleanOption("show_biome", false);
+	private final StringOption delimiter = new StringOption("coordshud.delimiter", " ");
+	private final StringOption separator = new StringOption("coordshud.separator", ", ");
+	private final ColorOption separatorColor = new ColorOption("coordshud.separator.color", firstColor.getDefault());
 
-	private final EnumOption anchor = new EnumOption("anchor", AnchorPoint.values(), AnchorPoint.TOP_MIDDLE.toString());
+	private final EnumOption<AnchorPoint> anchor = new EnumOption<>("anchorpoint", AnchorPoint.class, AnchorPoint.TOP_MIDDLE);
 
 	public CoordsHud() {
 		super(79, 31, true);
-	}
-
-	@Override
-	public void renderComponent(MatrixStack matrices, float delta) {
-		DrawPosition pos = getPos();
-		StringBuilder format = new StringBuilder("0");
-		if (decimalPlaces.get() > 0) {
-			format.append(".");
-			for (int i = 0; i < decimalPlaces.get(); i++) {
-				format.append("0");
-			}
-		}
-		DecimalFormat df = new DecimalFormat(format.toString());
-		df.setRoundingMode(RoundingMode.CEILING);
-		double x = client.player.getX();
-		double y = client.player.getY();
-		double z = client.player.getZ();
-		double yaw = client.player.getYaw(0) + 180;
-		int dir = getDirection(yaw);
-		String direction = getWordedDirection(dir);
-		TextRenderer textRenderer = client.textRenderer;
-		if (minimal.get()) {
-			int currPos = pos.x() + 1;
-			String separator = ", ";
-			drawString(matrices, textRenderer, "XYZ: ", currPos, pos.y() + 2, firstColor.get().getAsInt(),
-				shadow.get());
-			currPos += textRenderer.getWidth("XYZ: ");
-			drawString(matrices, textRenderer, String.valueOf(df.format(x)), currPos, pos.y() + 2,
-				secondColor.get().getAsInt(), shadow.get());
-			currPos += textRenderer.getWidth(String.valueOf(df.format(x)));
-			drawString(matrices, textRenderer, separator, currPos, pos.y() + 2, firstColor.get().getAsInt(),
-				shadow.get());
-			currPos += textRenderer.getWidth(separator);
-			drawString(matrices, textRenderer, String.valueOf(df.format(y)), currPos, pos.y() + 2,
-				secondColor.get().getAsInt(), shadow.get());
-			currPos += textRenderer.getWidth(String.valueOf(df.format(y)));
-			drawString(matrices, textRenderer, separator, currPos, pos.y() + 2, firstColor.get().getAsInt(),
-				shadow.get());
-			currPos += textRenderer.getWidth(separator);
-			drawString(matrices, textRenderer, String.valueOf(df.format(z)), currPos, pos.y() + 2,
-				secondColor.get().getAsInt(), shadow.get());
-			currPos += textRenderer.getWidth(String.valueOf(df.format(z)));
-			int width = currPos - pos.x() + 2;
-			boolean changed = false;
-			if (getWidth() != width) {
-				setWidth(width);
-				changed = true;
-			}
-			if (getHeight() != 11) {
-				setHeight(11);
-				changed = true;
-			}
-			if (changed) {
-				onBoundsUpdate();
-			}
-		} else {
-			drawString(matrices, textRenderer, "X", pos.x() + 1, pos.y() + 2, firstColor.get().getAsInt(),
-				shadow.get());
-			drawString(matrices, textRenderer, String.valueOf(df.format(x)), pos.x() + 11, pos.y() + 2,
-				secondColor.get().getAsInt(), shadow.get());
-
-			drawString(matrices, textRenderer, "Y", pos.x() + 1, pos.y() + 12, firstColor.get().getAsInt(),
-				shadow.get());
-			drawString(matrices, textRenderer, String.valueOf(df.format(y)), pos.x() + 11, pos.y() + 12,
-				secondColor.get().getAsInt(), shadow.get());
-
-			drawString(matrices, textRenderer, "Z", pos.x() + 1, pos.y() + 22, firstColor.get().getAsInt(),
-				shadow.get());
-
-			drawString(matrices, textRenderer, String.valueOf(df.format(z)), pos.x() + 11, pos.y() + 22,
-				secondColor.get().getAsInt(), shadow.get());
-
-			drawString(matrices, textRenderer, direction, pos.x() + 60, pos.y() + 12, firstColor.get().getAsInt(),
-				shadow.get());
-
-			drawString(matrices, textRenderer, getXDir(dir), pos.x() + 60, pos.y() + 2, secondColor.get().getAsInt(),
-				shadow.get());
-			textRenderer.drawWithShadow(matrices, getZDir(dir), pos.x() + 60, pos.y() + 22,
-				secondColor.get().getAsInt(), shadow.get());
-			boolean changed = false;
-			if (getWidth() != 79) {
-				setWidth(79);
-				changed = true;
-			}
-			if (getHeight() != 31) {
-				setHeight(31);
-				changed = true;
-			}
-			if (changed) {
-				onBoundsUpdate();
-			}
-		}
 	}
 
 	/**
@@ -181,63 +97,156 @@ public class CoordsHud extends TextHudEntry implements DynamicallyPositionable {
 		return 0;
 	}
 
-	public String getWordedDirection(int dir) {
-		switch (dir) {
-			case 1:
-				return "N";
-			case 2:
-				return "NE";
-			case 3:
-				return "E";
-			case 4:
-				return "SE";
-			case 5:
-				return "S";
-			case 6:
-				return "SW";
-			case 7:
-				return "W";
-			case 8:
-				return "NW";
-			case 0:
-				return "?";
-			default:
-				return "";
-		}
-	}
-
 	public static String getXDir(int dir) {
-		switch (dir) {
-			case 3:
-				return "++";
-			case 2:
-			case 4:
-				return "+";
-			case 6:
-			case 8:
-				return "-";
-			case 7:
-				return "--";
-			default:
-				return "";
-		}
+		return switch (dir) {
+			case 3 -> "++";
+			case 2, 4 -> "+";
+			case 6, 8 -> "-";
+			case 7 -> "--";
+			default -> "";
+		};
 	}
 
 	public static String getZDir(int dir) {
-		switch (dir) {
-			case 5:
-				return "++";
-			case 4:
-			case 6:
-				return "+";
-			case 8:
-			case 2:
-				return "-";
-			case 1:
-				return "--";
-			default:
-				return "";
+		return switch (dir) {
+			case 5 -> "++";
+			case 4, 6 -> "+";
+			case 8, 2 -> "-";
+			case 1 -> "--";
+			default -> "";
+		};
+	}
+
+	@Override
+	public void renderComponent(MatrixStack matrices, float delta) {
+		DrawPosition pos = getPos();
+		StringBuilder format = new StringBuilder("0");
+		if (decimalPlaces.get() > 0) {
+			format.append(".");
+			format.append("0".repeat(Math.max(0, decimalPlaces.get())));
 		}
+		DecimalFormat df = new DecimalFormat(format.toString());
+		df.setRoundingMode(RoundingMode.CEILING);
+		double x = client.player.getX();
+		double y = client.player.getY();
+		double z = client.player.getZ();
+		double yaw = client.player.getYaw(0) + 180;
+		int dir = getDirection(yaw);
+		String direction = getWordedDirection(dir);
+		int width, height;
+		int xStart = pos.x() + 2;
+		int currPos = xStart;
+		if (minimal.get()) {
+			String separator = this.separator.get();
+			currPos = drawString(matrices, "XYZ" + delimiter.get(), currPos, pos.y() + 2, firstColor.get().toInt(), shadow.get());
+			currPos = drawString(matrices, df.format(x), currPos, pos.y() + 2, secondColor.get().toInt(),
+				shadow.get());
+			currPos = drawString(matrices, separator, currPos, pos.y() + 2, separatorColor.get().toInt(), shadow.get());
+			currPos = drawString(matrices, df.format(y), currPos, pos.y() + 2, secondColor.get().toInt(),
+				shadow.get());
+			currPos = drawString(matrices, separator, currPos, pos.y() + 2, separatorColor.get().toInt(), shadow.get());
+			currPos = drawString(matrices, df.format(z), currPos, pos.y() + 2, secondColor.get().toInt(),
+				shadow.get());
+			width = currPos - pos.x() + 2;
+			height = 11;
+		} else {
+			int xEnd;
+			int yEnd = pos.y() + 2;
+			String del = delimiter.get();
+			currPos = drawString(matrices, "X" + del, currPos, yEnd, firstColor.get().toInt(), shadow.get());
+			xEnd = drawString(matrices, df.format(x), currPos, yEnd,
+				secondColor.get().toInt(), shadow.get());
+
+			yEnd += 10;
+			currPos = xStart;
+
+			currPos = drawString(matrices, "Y" + del, currPos, yEnd, firstColor.get().toInt(), shadow.get());
+			xEnd = Math.max(xEnd, drawString(matrices, df.format(y), currPos, yEnd,
+				secondColor.get().toInt(), shadow.get()));
+
+			yEnd += 10;
+			currPos = xStart;
+
+			currPos = drawString(matrices, "Z" + del, currPos, yEnd, firstColor.get().toInt(), shadow.get());
+			xEnd = Math.max(xEnd, drawString(matrices, df.format(z), currPos, yEnd,
+				secondColor.get().toInt(), shadow.get()));
+
+			yEnd += 10;
+
+
+			xEnd = Math.max(pos.x() + 60, xEnd + 4);
+
+			drawString(matrices, direction, xEnd, pos.y() + 12, firstColor.get().toInt(), shadow.get());
+
+			drawString(matrices, getXDir(dir), xEnd, pos.y() + 2, secondColor.get().toInt(),
+				shadow.get());
+			drawString(matrices, getZDir(dir), xEnd, pos.y() + 22, secondColor.get().toInt(),
+				shadow.get());
+			xEnd += 14;
+			width = xEnd - pos.x();
+			height = yEnd + 1 - pos.y();
+		}
+		if (biome.get() && y >= 0 && y < 256) {
+			BlockPos b = new BlockPos(x, y, z);
+			int bX = drawString(matrices, I18n.translate("coordshud.biome") + delimiter.get(), xStart, height + pos.y(), firstColor.get().toInt(), shadow.get());
+			width = Math.max(width + pos.x() - 1, drawString(matrices, getBiomeName(this.client.world.getRegistryManager().get(Registry.BIOME_KEY).getId(this.client.world.getBiome(b))), bX, height + pos.y(), secondColor.get().toInt(), shadow.get())) - pos.x() + 1;
+			height += 10;
+		}
+		boolean changed = false;
+		if (getWidth() != width) {
+			setWidth(width);
+			changed = true;
+		}
+		if (getHeight() != height) {
+			setHeight(height);
+			changed = true;
+		}
+		if (changed) {
+			onBoundsUpdate();
+		}
+	}
+
+	private String getBiomeName(Identifier biome) {
+		if (biome == null) {
+			return "Unknown";
+		}
+		String path = biome.getPath();
+		if (!biome.getNamespace().equals("minecraft")) {
+			String namespace = biome.getNamespace();
+			path += " (" + Character.toTitleCase(namespace.charAt(0)) + namespace.substring(1) + ")";
+		}
+		final String str = path.replace("_", " ");
+		if (str.isEmpty()) {
+			return str;
+		}
+
+		final int[] codepoints = str.codePoints().toArray();
+		boolean capitalizeNext = true;
+		for (int i = 0; i < codepoints.length; i++) {
+			final int ch = codepoints[i];
+			if (Character.isWhitespace(ch)) {
+				capitalizeNext = true;
+			} else if (capitalizeNext) {
+				codepoints[i] = Character.toTitleCase(ch);
+				capitalizeNext = false;
+			}
+		}
+		return new String(codepoints, 0, codepoints.length);
+	}
+
+	public String getWordedDirection(int dir) {
+		return switch (dir) {
+			case 1 -> "N";
+			case 2 -> "NE";
+			case 3 -> "E";
+			case 4 -> "SE";
+			case 5 -> "S";
+			case 6 -> "SW";
+			case 7 -> "W";
+			case 8 -> "NW";
+			case 0 -> "?";
+			default -> "";
+		};
 	}
 
 	@Override
@@ -246,9 +255,7 @@ public class CoordsHud extends TextHudEntry implements DynamicallyPositionable {
 		StringBuilder format = new StringBuilder("0");
 		if (decimalPlaces.get() > 0) {
 			format.append(".");
-			for (int i = 0; i < decimalPlaces.get(); i++) {
-				format.append("#");
-			}
+			format.append("#".repeat(Math.max(0, decimalPlaces.get())));
 		}
 
 		DecimalFormat df = new DecimalFormat(format.toString());
@@ -259,67 +266,91 @@ public class CoordsHud extends TextHudEntry implements DynamicallyPositionable {
 		double yaw = 180;
 		int dir = getDirection(yaw);
 		String direction = getWordedDirection(dir);
-		TextRenderer textRenderer = client.textRenderer;
+		int width, height;
+		int xStart = pos.x() + 2;
+		int currPos = xStart;
 		if (minimal.get()) {
-			int currPos = pos.x() + 1;
-			String separator = ", ";
-
-			textRenderer.drawWithShadow(matrices, "XYZ: ", currPos, pos.y() + 2, firstColor.get().getAsInt());
-			currPos += textRenderer.getWidth("XYZ: ");
-			textRenderer.drawWithShadow(matrices, String.valueOf(df.format(x)), currPos, pos.y() + 2,
-				secondColor.get().getAsInt(), shadow.get());
-			currPos += textRenderer.getWidth(String.valueOf(df.format(x)));
-			textRenderer.drawWithShadow(matrices, separator, currPos, pos.y() + 2, firstColor.get().getAsInt(),
+			String separator = this.separator.get();
+			currPos = drawString(matrices, "XYZ" + delimiter.get(), currPos, pos.y() + 2, firstColor.get().toInt(), shadow.get());
+			currPos = drawString(matrices, df.format(x), currPos, pos.y() + 2, secondColor.get().toInt(),
 				shadow.get());
-			currPos += textRenderer.getWidth(separator);
-			textRenderer.drawWithShadow(matrices, String.valueOf(df.format(y)), currPos, pos.y() + 2,
-				secondColor.get().getAsInt(), shadow.get());
-			currPos += textRenderer.getWidth(String.valueOf(df.format(y)));
-			textRenderer.drawWithShadow(matrices, separator, currPos, pos.y() + 2, firstColor.get().getAsInt(),
+			currPos = drawString(matrices, separator, currPos, pos.y() + 2, separatorColor.get().toInt(), shadow.get());
+			currPos = drawString(matrices, df.format(y), currPos, pos.y() + 2, secondColor.get().toInt(),
 				shadow.get());
-			currPos += textRenderer.getWidth(separator);
-			textRenderer.drawWithShadow(matrices, String.valueOf(df.format(z)), currPos, pos.y() + 2,
-				secondColor.get().getAsInt(), shadow.get());
-			currPos += textRenderer.getWidth(String.valueOf(df.format(z)));
-
-			int width = currPos - pos.x() + 2;
-			boolean changed = false;
-			if (getWidth() != width) {
-				setWidth(width);
-				changed = true;
-			}
-			if (getHeight() != 11) {
-				setHeight(11);
-				changed = true;
-			}
-			if (changed) {
-				onBoundsUpdate();
-			}
+			currPos = drawString(matrices, separator, currPos, pos.y() + 2, separatorColor.get().toInt(), shadow.get());
+			currPos = drawString(matrices, df.format(z), currPos, pos.y() + 2, secondColor.get().toInt(),
+				shadow.get());
+			width = currPos - pos.x() + 2;
+			height = 11;
 		} else {
-			textRenderer.drawWithShadow(matrices, "X", pos.x() + 1, pos.y() + 2, firstColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, String.valueOf(df.format(x)), pos.x() + 11, pos.y() + 2,
-				secondColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, "Y", pos.x() + 1, pos.y() + 12, firstColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, String.valueOf(df.format(y)), pos.x() + 11, pos.y() + 12,
-				secondColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, "Z", pos.x() + 1, pos.y() + 22, firstColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, String.valueOf(df.format(z)), pos.x() + 11, pos.y() + 22,
-				secondColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, direction, pos.x() + 60, pos.y() + 12, firstColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, getXDir(dir), pos.x() + 60, pos.y() + 2,
-				secondColor.get().getAsInt());
-			textRenderer.drawWithShadow(matrices, getZDir(dir), pos.x() + 60, pos.y() + 22,
-				secondColor.get().getAsInt());
+			int xEnd;
+			int yEnd = pos.y() + 2;
+			String del = delimiter.get();
+			currPos = drawString(matrices, "X" + del, currPos, yEnd, firstColor.get().toInt(), shadow.get());
+			xEnd = drawString(matrices, df.format(x), currPos, yEnd,
+				secondColor.get().toInt(), shadow.get());
+
+			yEnd += 10;
+			currPos = xStart;
+
+			currPos = drawString(matrices, "Y" + del, currPos, yEnd, firstColor.get().toInt(), shadow.get());
+			xEnd = Math.max(xEnd, drawString(matrices, df.format(y), currPos, yEnd,
+				secondColor.get().toInt(), shadow.get()));
+
+			yEnd += 10;
+			currPos = xStart;
+
+			currPos = drawString(matrices, "Z" + del, currPos, yEnd, firstColor.get().toInt(), shadow.get());
+			xEnd = Math.max(xEnd, drawString(matrices, df.format(z), currPos, yEnd,
+				secondColor.get().toInt(), shadow.get()));
+
+			yEnd += 10;
+
+
+			xEnd = Math.max(pos.x() + 60, xEnd + 4);
+
+			drawString(matrices, direction, xEnd, pos.y() + 12, firstColor.get().toInt(), shadow.get());
+
+			drawString(matrices, getXDir(dir), xEnd, pos.y() + 2, secondColor.get().toInt(),
+				shadow.get());
+			drawString(matrices, getZDir(dir), xEnd, pos.y() + 22, secondColor.get().toInt(),
+				shadow.get());
+			xEnd += 14;
+			width = xEnd - pos.x();
+			height = yEnd + 1 - pos.y();
+		}
+		if (biome.get()) {
+			int bX = drawString(matrices, I18n.translate("coordshud.biome") + delimiter.get(), xStart, height + pos.y(), firstColor.get().toInt(), shadow.get());
+			width = Math.max(width + pos.x() - 1, drawString(matrices, getBiomeName(BiomeKeys.PLAINS.getValue()), bX, height + pos.y(), secondColor.get().toInt(), shadow.get())) - pos.x() + 1;
+			height += 10;
+		}
+		boolean changed = false;
+		if (getWidth() != width) {
+			setWidth(width);
+			changed = true;
+		}
+		if (getHeight() != height) {
+			setHeight(height);
+			changed = true;
+		}
+		if (changed) {
+			onBoundsUpdate();
 		}
 	}
 
 	@Override
 	public List<Option<?>> getConfigurationOptions() {
 		List<Option<?>> options = super.getConfigurationOptions();
+		options.remove(textColor);
 		options.add(firstColor);
 		options.add(secondColor);
 		options.add(decimalPlaces);
 		options.add(minimal);
+		options.add(biome);
+		options.add(anchor);
+		options.add(delimiter);
+		options.add(separator);
+		options.add(separatorColor);
 		return options;
 	}
 
@@ -329,6 +360,6 @@ public class CoordsHud extends TextHudEntry implements DynamicallyPositionable {
 	}
 
 	public AnchorPoint getAnchor() {
-		return AnchorPoint.valueOf(anchor.get());
+		return anchor.get();
 	}
 }

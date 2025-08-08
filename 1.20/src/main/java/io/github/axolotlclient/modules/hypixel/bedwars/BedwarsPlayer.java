@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -23,6 +23,7 @@
 package io.github.axolotlclient.modules.hypixel.bedwars;
 
 
+import io.github.axolotlclient.api.util.UUIDHelper;
 import lombok.Data;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.PlayerListEntry;
@@ -35,11 +36,11 @@ import net.minecraft.client.network.PlayerListEntry;
 public class BedwarsPlayer {
 
 	private final BedwarsTeam team;
+	private final int number;
 	private PlayerListEntry profile;
 	private boolean alive = true;
 	private boolean disconnected = false;
 	private boolean bed = true;
-	private final int number;
 	private BedwarsPlayerStats stats = null;
 	private boolean triedStats = false;
 	private int tickAlive = -1;
@@ -90,13 +91,8 @@ public class BedwarsPlayer {
 	public void tick(int currentTick) {
 		if (stats == null && !triedStats) {
 			triedStats = true;
-			try {
-				stats = BedwarsPlayerStats.fromAPI(profile.getProfile().getId().toString().replace("-", ""));
-			} catch (Exception ignored) {
-			}
-			if (stats == null){
-				stats = BedwarsPlayerStats.generateFake(profile.getProfile().getName());
-			}
+			BedwarsPlayerStats.fromAPIOrFakeAsync(UUIDHelper.toUndashed(profile.getProfile().getId()))
+				.thenAccept(stat -> stats = stat);
 		}
 		if (alive || tickAlive < 0) {
 			return;

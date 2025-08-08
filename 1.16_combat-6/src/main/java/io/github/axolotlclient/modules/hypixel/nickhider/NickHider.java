@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,29 +22,34 @@
 
 package io.github.axolotlclient.modules.hypixel.nickhider;
 
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.OptionCategory;
-import io.github.axolotlclient.AxolotlClientConfig.options.StringOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import io.github.axolotlclient.AxolotlClientConfig.api.options.OptionCategory;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.BooleanOption;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.StringOption;
+import io.github.axolotlclient.api.util.BiContainer;
 import io.github.axolotlclient.modules.hypixel.AbstractHypixelMod;
 import lombok.Getter;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.text.LiteralText;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 
 public class NickHider implements AbstractHypixelMod {
 
 	@Getter
 	private final static NickHider Instance = new NickHider();
-
-	private final OptionCategory category = new OptionCategory("nickhider");
-
-	public StringOption hiddenNameSelf = new StringOption("hiddenNameSelf", "You");
-	public StringOption hiddenNameOthers = new StringOption("hiddenNameOthers", "Player");
-	public BooleanOption hideOwnName = new BooleanOption("hideOwnName", false);
-	public BooleanOption hideOtherNames = new BooleanOption("hideOtherNames", false);
-	public BooleanOption hideOwnSkin = new BooleanOption("hideOwnSkin", false);
-	public BooleanOption hideOtherSkins = new BooleanOption("hideOtherSkins", false);
+	public final StringOption hiddenNameSelf = new StringOption("hiddenNameSelf", "You");
+	public final StringOption hiddenNameOthers = new StringOption("hiddenNameOthers", "Player");
+	public final BooleanOption hideOwnName = new BooleanOption("hideOwnName", false);
+	public final BooleanOption hideOtherNames = new BooleanOption("hideOtherNames", false);
+	public final BooleanOption hideOwnSkin = new BooleanOption("hideOwnSkin", false);
+	public final BooleanOption hideOtherSkins = new BooleanOption("hideOtherSkins", false);
+	private final OptionCategory category = OptionCategory.create("nickhider");
 
 	@Override
 	public void init() {
@@ -65,21 +70,51 @@ public class NickHider implements AbstractHypixelMod {
 		if (hideOwnName.get() || hideOtherNames.get()) {
 			String msg = message.getString();
 
-			String playerName = MinecraftClient.getInstance().player.getName().getString();
-			if (NickHider.Instance.hideOwnName.get() && msg.contains(playerName)) {
-				msg = msg.replaceAll(playerName, NickHider.Instance.hiddenNameSelf.get());
+			List<BiContainer<String, String>> replacements = new ArrayList<>();
+			if (MinecraftClient.getInstance().player != null) {
+				String playerName = MinecraftClient.getInstance().player.getName().getString();
+				if (hideOwnName.get() && msg.contains(playerName)) {
+					replacements.add(BiContainer.of(playerName, hiddenNameSelf.get()));
+				}
 			}
 
-			if (NickHider.Instance.hideOtherNames.get()) {
+			if (hideOtherNames.get() && MinecraftClient.getInstance().world != null) {
 				for (AbstractClientPlayerEntity player : MinecraftClient.getInstance().world.getPlayers()) {
+					if (player == MinecraftClient.getInstance().player) {
+						continue;
+					}
 					if (msg.contains(player.getName().getString())) {
-						msg = msg.replaceAll(player.getName().getString(), NickHider.Instance.hiddenNameOthers.get());
+						replacements.add(BiContainer.of(player.getName().getString(), hiddenNameOthers.get()));
 					}
 				}
 			}
 
-			return new LiteralText(msg).copy().setStyle(message.getStyle());
+			if (!replacements.isEmpty()) {
+				MutableText editedMessage = LiteralText.EMPTY.copy();
+				editComponent(message, replacements, editedMessage);
+				return editedMessage;
+			}
 		}
 		return message;
+	}
+
+	public Text editComponent(Text c, String find, String replace) {
+		MutableText edited = LiteralText.EMPTY.copy();
+		c.visit((style, string) -> {
+			edited.append(new LiteralText(string.replace(find, replace)).setStyle(style));
+			return Optional.empty();
+		}, Style.EMPTY);
+		return edited;
+	}
+
+	private void editComponent(Text component, List<BiContainer<String, String>> replacements, MutableText edited) {
+		component.visit((style, string) -> {
+			String edit = string;
+			for (var entry : replacements) {
+				edit = edit.replace(entry.getLeft(), entry.getRight());
+			}
+			edited.append(new LiteralText(edit).setStyle(style));
+			return Optional.empty();
+		}, Style.EMPTY);
 	}
 }

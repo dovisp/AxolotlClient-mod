@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2023 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -43,7 +43,7 @@ public abstract class ClientWorldMixin {
 		Entity entity = this.getEntityById(entityId);
 		if (entity instanceof PlayerEntity && HypixelMods.getInstance().cacheMode.get()
 			.equals(HypixelMods.HypixelCacheMode.ON_PLAYER_DISCONNECT.toString())) {
-			HypixelAbstractionLayer.handleDisconnectEvents(entity.getUuid());
+			HypixelAbstractionLayer.getInstance().handleDisconnectEvents(entity.getUuid());
 		}
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2023 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -62,4 +62,6 @@ public interface HudEntry extends Identifiable, Configurable, Positionable {
 	void renderPlaceholder(float delta);
 
 	void setHovered(boolean hovered);
+
+	boolean isHovered();
 }

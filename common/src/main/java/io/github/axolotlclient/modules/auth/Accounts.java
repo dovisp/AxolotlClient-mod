@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,9 +22,7 @@
 
 package io.github.axolotlclient.modules.auth;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -32,71 +30,66 @@ import java.util.List;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import io.github.axolotlclient.AxolotlClientCommon;
 import io.github.axolotlclient.util.GsonHelper;
 import io.github.axolotlclient.util.Logger;
+import lombok.Getter;
 
+@Getter
 public abstract class Accounts {
 
-	private final List<MSAccount> accounts = new ArrayList<>();
-	protected MSAccount current;
+	private final List<Account> accounts = new ArrayList<>();
+	protected Account current;
 	protected MSAuth auth;
 
-	public MSAuth getAuth() {
-		return auth;
-	}
-
-	public List<MSAccount> getAccounts() {
-		return accounts;
-	}
-
 	public void load() {
-		if (getAccountsSaveFile().toFile().exists()) {
+		Path legacy = AxolotlClientCommon.resolveConfigFile("../accounts.json");
+		Path saveFile = getAccountsSaveFile();
+		if (Files.exists(legacy)) {
 			try {
-				JsonObject list = GsonHelper.GSON.fromJson(String.join("", Files.readAllLines(getAccountsSaveFile())), JsonObject.class);
-				if (list != null) {
-					list.get("accounts").getAsJsonArray().forEach(jsonElement -> accounts.add(MSAccount.deserialize(jsonElement.getAsJsonObject())));
+				if (Files.exists(saveFile)) {
+					Files.move(legacy, legacy.resolveSibling("accounts.json.old"));
+					getLogger().info("Renaming legacy accounts save file since new one exists already.");
+				} else {
+					Files.createDirectories(saveFile.getParent());
+					Files.move(legacy, saveFile);
 				}
 			} catch (IOException e) {
-				throw new RuntimeException(e);
+				getLogger().warn("Failed to move legacy accounts file to new location", e);
+			}
+		}
+		if (Files.exists(saveFile)) {
+			try {
+				JsonObject list = GsonHelper.GSON.fromJson(Files.newBufferedReader(saveFile), JsonObject.class);
+				if (list != null) {
+					list.get("accounts").getAsJsonArray().forEach(jsonElement -> accounts.add(Account.deserialize(jsonElement.getAsJsonObject())));
+				}
+			} catch (IOException e) {
+				getLogger().warn("Failed to load accounts file!", e);
 			}
 		} else {
 			try {
-				//noinspection ResultOfMethodCallIgnored
-				getAccountsSaveFile().toFile().createNewFile();
+				Files.createDirectories(getAccountsSaveFile().getParent());
+				Files.createFile(getAccountsSaveFile());
 			} catch (IOException e) {
-				throw new RuntimeException(e);
+				getLogger().warn("Failed to create accounts file", e);
 			}
 		}
 	}
 
 	protected Path getAccountsSaveFile() {
-		return getConfigDir().resolve("accounts.json");
+		return AxolotlClientCommon.resolveConfigFile("accounts.json");
 	}
 
-	protected abstract Path getConfigDir();
-
-	public void addAccount(MSAccount account) {
+	public void addAccount(Account account) {
 		accounts.add(account);
 	}
 
-	public MSAccount getCurrent() {
-		return current;
-	}
+	protected abstract void login(Account account);
 
-	protected abstract void login(MSAccount account);
-
-	public void removeAccount(MSAccount account) {
+	public void removeAccount(Account account) {
 		accounts.remove(account);
-		removeSkinFile(account);
 		save();
-	}
-
-	public void removeSkinFile(MSAccount account) {
-		try {
-			Files.delete(getSkinFile(account).toPath());
-		} catch (IOException e) {
-			getLogger().error("Failed to clean up skin file for " + account.getName());
-		}
 	}
 
 	public void save() {
@@ -105,34 +98,15 @@ public abstract class Accounts {
 		JsonObject object = new JsonObject();
 		object.add("accounts", array);
 		try {
-			Files.write(getAccountsSaveFile(), GsonHelper.GSON.toJson(object).getBytes(StandardCharsets.UTF_8));
+			Files.createDirectories(getAccountsSaveFile().getParent());
+			Files.writeString(getAccountsSaveFile(), GsonHelper.GSON.toJson(object));
 		} catch (IOException e) {
 			getLogger().error("Failed to save acounts config!", e);
 		}
 	}
 
-	public File getSkinFile(MSAccount account) {
-		return getSkinFile(account.getUuid());
-	}
-
-	protected abstract Logger getLogger();
-
-	@SuppressWarnings("ResultOfMethodCallIgnored")
-	public File getSkinFile(String uuid) {
-		File f = getConfigDir().resolve("skins").resolve(uuid).toFile();
-		if (!f.exists()) {
-			try {
-				f.getParentFile().mkdirs();
-				f.createNewFile();
-			} catch (IOException e) {
-				getLogger().error("Couldn't create skin file for " + uuid);
-			}
-		}
-		return f;
-	}
-
-	public String getSkinTextureId(MSAccount account) {
-		return "accounts_" + account.getUuid();
+	private Logger getLogger() {
+		return AxolotlClientCommon.getInstance().getLogger();
 	}
 
 	protected boolean isContained(String uuid) {
@@ -140,6 +114,10 @@ public abstract class Accounts {
 	}
 
 	public boolean allowOfflineAccounts() {
-		return accounts.size() > 0 && !accounts.stream().allMatch(MSAccount::isOffline);
+		return !accounts.isEmpty() && !accounts.stream().allMatch(Account::isOffline);
 	}
+
+	abstract void showAccountsExpiredScreen(Account account);
+
+	abstract void displayDeviceCode(DeviceFlowData data);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,138 +22,158 @@
 
 package io.github.axolotlclient.modules.hypixel;
 
-import java.util.HashMap;
-import java.util.Objects;
-import java.util.Random;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
-import com.google.gson.JsonObject;
-import io.github.axolotlclient.modules.hypixel.levelhead.LevelHeadMode;
-import io.github.axolotlclient.util.ThreadExecuter;
-import net.hypixel.api.HypixelAPI;
-import net.hypixel.api.apache.ApacheHttpClient;
-import net.hypixel.api.reply.PlayerReply;
-
-/**
- * Based on Osmium by Intro-Dev
- * (<a href="https://github.com/Intro-Dev/Osmium">Github</a>)
- *
- * @license CC0-1.0
- * @implNote Provides a layer between the hypixel api and the client to obtain information with minimal api calls
- */
+import com.google.gson.FieldNamingPolicy;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import io.github.axolotlclient.api.API;
+import io.github.axolotlclient.api.Request;
+import io.github.axolotlclient.api.Response;
+import io.github.axolotlclient.util.CachedAPI;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 
 public class HypixelAbstractionLayer {
+	private static final Gson GSON = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create();
+	private static final int MAX_ATTEMPTS = 5;
 
-	private static final HashMap<String, CompletableFuture<PlayerReply>> cachedPlayerData = new HashMap<>();
-	private static final HashMap<String, Integer> tempValues = new HashMap<>();
-	private static final AtomicInteger hypixelApiCalls = new AtomicInteger(0);
-	private static Supplier<String> keySupplier;
-	private static HypixelAPI api;
-	private static boolean validApiKey = false;
-
-	public static void setApiKeySupplier(Supplier<String> supplier) {
-		keySupplier = supplier;
+	@AllArgsConstructor
+	@Getter
+	private enum RequestDataType {
+		NETWORK_LEVEL("network_level"),
+		BEDWARS_LEVEL("bedwars_level"),
+		SKYWARS_EXPERIENCE("skywars_experience"),
+		BEDWARS_DATA("bedwars_data"),
+		PLAYER_DATA("player_data");
+		private final String id;
 	}
 
-	public static boolean hasValidAPIKey() {
-		return validApiKey;
+	private final ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
+
+	@Getter
+	private static final HypixelAbstractionLayer instance = new HypixelAbstractionLayer();
+
+	private void queueRetry(int attempts, String desc, Request request, CompletableFuture<Optional<Response>> future, long count, TimeUnit unit) {
+		service.schedule(() -> queueRequest0(attempts - 1, desc, request, future), count, unit);
 	}
 
-	public static JsonObject getPlayerProperty(String uuid, String stat) {
-		if (loadPlayerDataIfAbsent(uuid)) {
-			PlayerReply.Player player = getPlayer(uuid);
-			return player == null ? null : player.getProperty(stat).getAsJsonObject();
-		}
-		return null;
-	}
-
-	public static int getPlayerLevel(String uuid, String mode) {
-		if (api == null) {
-			loadApiKey();
-		}
-		if (loadPlayerDataIfAbsent(uuid)) {
-			PlayerReply.Player player = getPlayer(uuid);
-			if (player != null) {
-				int value = -1;
-				if (Objects.equals(mode, LevelHeadMode.NETWORK.toString())) {
-					value = (int) player.getNetworkLevel();
-				} else if (Objects.equals(mode, LevelHeadMode.BEDWARS.toString())) {
-					value = player.getIntProperty("achievements.bedwars_level", -1);
-				} else if (Objects.equals(mode, LevelHeadMode.SKYWARS.toString())) {
-					int exp = player
-						.getIntProperty("stats.SkyWars.skywars_experience", -1);
-					if(exp != -1) {
-						value = Math.round(ExpCalculator.getLevelForExp(exp));
-					}
-				}
-				if(value > -1){
-					tempValues.remove(uuid);
-					return value;
-				}
-			}
-		}
-		return tempValues.computeIfAbsent(uuid, s -> (int) (new Random().nextGaussian()*30+150));
-	}
-
-	private static PlayerReply.Player getPlayer(String uuid) {
-		if (api == null) {
-			loadApiKey();
-		}
-		if (loadPlayerDataIfAbsent(uuid)) {
-			try {
-				return cachedPlayerData.get(uuid).get(1, TimeUnit.MICROSECONDS).getPlayer();
-			} catch (TimeoutException | InterruptedException | ExecutionException ignored) {
-			}
-		}
-		return null;
-	}
-
-	public static void loadApiKey() {
-		String API_KEY = keySupplier.get();
-		if (API_KEY == null) {
+	private void queueRequest0(int attempts, String desc, Request request, CompletableFuture<Optional<Response>> future) {
+		if (attempts <= 0) {
+			future.complete(Optional.empty());
 			return;
 		}
-		if (!Objects.equals(API_KEY, "")) {
-			try {
-				api = new HypixelAPI(new ApacheHttpClient(UUID.fromString(API_KEY)));
-				validApiKey = true;
-			} catch (Exception ignored) {
-				validApiKey = false;
+
+		API.getInstance().get(request).whenComplete((response, throwable) -> {
+			if (response == null) {
+				API.getInstance().getLogger().warn("Failed to process request {}: ", desc, throwable);
+				return;
 			}
-		} else {
-			validApiKey = false;
-		}
-	}
 
-	private static boolean loadPlayerDataIfAbsent(String uuid) {
-		if (cachedPlayerData.get(uuid) == null) {
-			// set at 115 to have a buffer in case of disparity between threads
-			if (hypixelApiCalls.get() <= 55) {
-				cachedPlayerData.put(uuid, api.getPlayerByUuid(uuid));
-				hypixelApiCalls.incrementAndGet();
-				ThreadExecuter.scheduleTask(hypixelApiCalls::decrementAndGet, 1, TimeUnit.MINUTES);
-				return true;
+			if (response.getStatus() == 429) {
+				API.getInstance().getLogger().warn("Failed to process request {}: rate limited", desc, throwable);
+
+				queueRetry(
+					attempts, desc, request, future,
+					response.firstHeader("RateLimit-Reset").map(Long::parseLong).orElse(2L),
+					TimeUnit.SECONDS
+				);
+			} else if (response.getStatus() != 200 || response.isError()) {
+				API.getInstance().getLogger().warn("Failed to process request {} ({}): {}", desc, response.getStatus(), response.getBody());
+			} else {
+				future.complete(Optional.of(response));
 			}
-			return false;
-		}
-		return true;
+		});
 	}
 
-	public static void clearPlayerData() {
-		cachedPlayerData.clear();
+	private CompletableFuture<Optional<Response>> queueRequest(String desc, Request request) {
+		CompletableFuture<Optional<Response>> future = new CompletableFuture<>();
+		queueRequest0(MAX_ATTEMPTS, desc, request, future);
+		return future;
 	}
 
-	public static void handleDisconnectEvents(UUID uuid) {
+	private <V> CachedAPI<String, V> create(RequestDataType type, Function<Response, V> app) {
+		return new CachedAPI<>(uuid -> {
+			Request request = Request.Route.HYPIXEL
+				.builder()
+				.field("request_type", type.getId())
+				.field("target_player", uuid)
+				.build();
+
+			return queueRequest("[%s, %s]".formatted(type.getId(), uuid), request).thenApply(opt -> opt.flatMap(res -> {
+				try {
+					return Optional.ofNullable(app.apply(res));
+				} catch (Throwable e) {
+					API.getInstance().getLogger().warn("Failed to parse request for {} (uuid={})", type.getId(), uuid);
+					return Optional.empty();
+				}
+			}));
+		}, 128, true);
+	}
+
+	private CachedAPI<String, Integer> createLevel(RequestDataType type) {
+		return create(type, res -> {
+			var level = res.<Number>getBody(type.getId()).intValue();
+			return level == -1 ? null : level;
+		});
+	}
+
+	private void freePlayerData(String uuid) {
+		bedwarsDataApi.invalidate(uuid);
+		networkLevelApi.invalidate(uuid);
+		bedwarsLevelApi.invalidate(uuid);
+		skywarsExpApi.invalidate(uuid);
+	}
+
+	@Getter
+	private final CachedAPI<String, BedwarsData> bedwarsDataApi = create(RequestDataType.BEDWARS_DATA,
+		res -> new BedwarsData(
+			res.<Number>getBody("final_kills_bedwars").intValue(),
+			res.<Number>getBody("final_deaths_bedwars").intValue(),
+			res.<Number>getBody("beds_broken_bedwars").intValue(),
+			res.<Number>getBody("deaths_bedwars").intValue(),
+			res.<Number>getBody("kills_bedwars").intValue(),
+			res.<Number>getBody("losses_bedwars").intValue(),
+			res.<Number>getBody("wins_bedwars").intValue(),
+			res.<Number>getBody("winstreak").intValue()
+		)
+	);
+
+	@Getter
+	private final CachedAPI<String, Integer> networkLevelApi = createLevel(RequestDataType.NETWORK_LEVEL);
+
+	@Getter
+	private final CachedAPI<String, Integer> bedwarsLevelApi = createLevel(RequestDataType.BEDWARS_LEVEL);
+
+	@Getter
+	private final CachedAPI<String, Integer> skywarsExpApi = create(RequestDataType.SKYWARS_EXPERIENCE,
+		res -> {
+			var exp = res.<Number>getBody(RequestDataType.SKYWARS_EXPERIENCE.getId()).intValue();
+			if (exp == -1) {
+				return null;
+			}
+			return Math.round(ExpCalculator.getLevelForExp(exp));
+		});
+
+	@Getter
+	private final CachedAPI<String, PlayerData> playerDataApi = create(RequestDataType.PLAYER_DATA,
+		response -> GSON.fromJson(response.getPlainBody(), PlayerData.class)
+	);
+
+	public void clearPlayerData() {
+		bedwarsDataApi.invalidate();
+		networkLevelApi.invalidate();
+		bedwarsLevelApi.invalidate();
+		skywarsExpApi.invalidate();
+	}
+
+	public void handleDisconnectEvents(UUID uuid) {
 		freePlayerData(uuid.toString());
-	}
-
-	private static void freePlayerData(String uuid) {
-		cachedPlayerData.remove(uuid);
 	}
 }

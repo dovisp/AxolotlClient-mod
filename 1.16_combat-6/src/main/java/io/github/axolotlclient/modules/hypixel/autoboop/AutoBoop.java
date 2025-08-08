@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,40 +22,26 @@
 
 package io.github.axolotlclient.modules.hypixel.autoboop;
 
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.OptionCategory;
+import java.util.List;
+
 import io.github.axolotlclient.modules.hypixel.AbstractHypixelMod;
 import io.github.axolotlclient.util.Util;
-import io.github.axolotlclient.util.events.Events;
-import io.github.axolotlclient.util.events.impl.ReceiveChatMessageEvent;
 import lombok.Getter;
+import net.minecraft.client.MinecraftClient;
 
 // Based on https://github.com/VeryHolyCheeeese/AutoBoop/blob/main/src/main/java/autoboop/AutoBoop.java
-public class AutoBoop implements AbstractHypixelMod {
+public class AutoBoop extends AutoBoopCommon implements AbstractHypixelMod {
 
 	@Getter
 	private final static AutoBoop Instance = new AutoBoop();
 
-	protected OptionCategory cat = new OptionCategory("autoBoop");
-	protected BooleanOption enabled = new BooleanOption("enabled", "autoBoop", false);
-
 	@Override
-	public void init() {
-		cat.add(enabled);
-		Events.RECEIVE_CHAT_MESSAGE_EVENT.register(this::onMessage);
+	protected void sendChatMessage(String message) {
+		Util.sendChatMessage(message);
 	}
 
 	@Override
-	public OptionCategory getCategory() {
-		return cat;
-	}
-
-	public void onMessage(ReceiveChatMessageEvent event) {
-		String message = event.getOriginalMessage();
-		if (enabled.get() && message.contains("Friend >") && message.contains("joined.")) {
-			String player = message.substring(message.indexOf(">"),
-				message.lastIndexOf(" "));
-			Util.sendChatMessage("/boop " + player);
-		}
+	protected void openFiltersScreen(List<String> filters) {
+		MinecraftClient.getInstance().openScreen(new FilterListConfigurationScreen(filters, MinecraftClient.getInstance().currentScreen));
 	}
 }

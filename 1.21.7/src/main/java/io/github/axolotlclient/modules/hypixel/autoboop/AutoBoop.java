@@ -1,0 +1,47 @@
+/*
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
+ *
+ * This file is part of AxolotlClient.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ * For more information, see the LICENSE file.
+ */
+
+package io.github.axolotlclient.modules.hypixel.autoboop;
+
+import java.util.List;
+
+import io.github.axolotlclient.modules.hypixel.AbstractHypixelMod;
+import io.github.axolotlclient.util.Util;
+import lombok.Getter;
+import net.minecraft.client.Minecraft;
+
+// Based on https://github.com/VeryHolyCheeeese/AutoBoop/blob/main/src/main/java/autoboop/AutoBoop.java
+public class AutoBoop extends AutoBoopCommon implements AbstractHypixelMod {
+
+	@Getter
+	private final static AutoBoop Instance = new AutoBoop();
+
+	@Override
+	protected void sendChatMessage(String message) {
+		Util.sendChatMessage(message);
+	}
+
+	@Override
+	protected void openFiltersScreen(List<String> filters) {
+		Minecraft.getInstance().setScreen(new FilterListConfigurationScreen(filters, Minecraft.getInstance().screen));
+	}
+}

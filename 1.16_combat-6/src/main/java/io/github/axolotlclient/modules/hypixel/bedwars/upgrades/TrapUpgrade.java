@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -30,10 +30,11 @@ import java.util.regex.Pattern;
 
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
-import io.github.axolotlclient.AxolotlClientConfig.Color;
+import io.github.axolotlclient.AxolotlClientConfig.api.util.Color;
 import io.github.axolotlclient.modules.hud.util.ItemUtil;
 import io.github.axolotlclient.modules.hypixel.bedwars.BedwarsMod;
 import io.github.axolotlclient.modules.hypixel.bedwars.BedwarsMode;
+import io.github.axolotlclient.util.ClientColors;
 import lombok.AllArgsConstructor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawableHelper;
@@ -52,7 +53,8 @@ public class TrapUpgrade extends TeamUpgrade {
 
 	private final static Pattern[] REGEX = {
 		Pattern.compile("^\\b[A-Za-z0-9_§]{3,16}\\b purchased (.+) Trap.?\\s*$"),
-		Pattern.compile("Trap was set (off)!"),
+		Pattern.compile("[Tt]rap (?:was )?set (off)(?: by .+ from .+ team)?!"),
+		Pattern.compile("Removed (.+) from the (queue)!\\s*$")
 	};
 
 	private final List<TrapType> traps = new ArrayList<>(3);
@@ -68,7 +70,12 @@ public class TrapUpgrade extends TeamUpgrade {
 			traps.remove(0);
 			return;
 		}
-		traps.add(TrapType.getFuzzy(matcher.group(1)));
+		TrapType type = TrapType.getFuzzy(matcher.group(1));
+		if (matcher.groupCount() >= 2 && matcher.group(2).equals("queue")) {
+			traps.remove(type);
+			return;
+		}
+		traps.add(type);
 	}
 
 	public boolean canPurchase() {
@@ -97,8 +104,8 @@ public class TrapUpgrade extends TeamUpgrade {
 	@Override
 	public void draw(MatrixStack stack, int x, int y, int width, int height) {
 		if (traps.size() == 0) {
-			Color color = Color.DARK_GRAY;
-			GlStateManager.color4f(color.getAlpha()/255F, color.getRed()/255F, color.getGreen()/255F, color.getBlue()/255F);
+			Color color = ClientColors.DARK_GRAY;
+			GlStateManager.color4f(color.getAlpha() / 255F, color.getRed() / 255F, color.getGreen() / 255F, color.getBlue() / 255F);
 			MinecraftClient.getInstance().getTextureManager().bindTexture(new Identifier("textures/item/barrier.png"));
 			DrawableHelper.drawTexture(stack, x, y, 0, 0, 16, 16, 16, 16);
 		} else {
@@ -110,7 +117,7 @@ public class TrapUpgrade extends TeamUpgrade {
 		}
 	}
 
-	public int getTrapCount(){
+	public int getTrapCount() {
 		return traps.size();
 	}
 
@@ -138,8 +145,7 @@ public class TrapUpgrade extends TeamUpgrade {
 			Sprite sprite = MinecraftClient.getInstance().getStatusEffectSpriteManager().getSprite(StatusEffects.MINING_FATIGUE);
 			MinecraftClient.getInstance().getTextureManager().bindTexture(sprite.getAtlas().getId());
 			DrawableHelper.drawSprite(graphics, x, y, 0, width, height, sprite);
-		})
-		;
+		});
 
 		private final TeamUpgradeRenderer renderer;
 
@@ -148,7 +154,7 @@ public class TrapUpgrade extends TeamUpgrade {
 			if (s.contains("miner")) {
 				return MINER_FATIGUE;
 			}
-			if (s.contains("alarm")) {
+			if (s.contains("reveal")) {
 				return ALARM;
 			}
 			if (s.contains("counter")) {
@@ -157,7 +163,7 @@ public class TrapUpgrade extends TeamUpgrade {
 			return ITS_A_TRAP;
 		}
 
-		public void draw(MatrixStack graphics, int x, int y, int width, int height){
+		public void draw(MatrixStack graphics, int x, int y, int width, int height) {
 			renderer.render(graphics, x, y, width, height, 0);
 		}
 	}

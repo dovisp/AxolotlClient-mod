@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -25,8 +25,8 @@ package io.github.axolotlclient.modules.hud.gui.hud.simple;
 import java.net.InetAddress;
 import java.util.List;
 
-import io.github.axolotlclient.AxolotlClientConfig.options.IntegerOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.Option;
+import io.github.axolotlclient.AxolotlClientConfig.api.options.Option;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.IntegerOption;
 import io.github.axolotlclient.modules.hud.gui.entry.SimpleTextHudEntry;
 import io.github.axolotlclient.util.ThreadExecuter;
 import net.minecraft.client.MinecraftClient;
@@ -82,11 +82,7 @@ public class PingHud extends SimpleTextHudEntry {
 
 	private void updatePing() {
 		if (MinecraftClient.getInstance().getCurrentServerEntry() != null) {
-			if (MinecraftClient.getInstance().getCurrentServerEntry().ping <= 1) {
-				getRealTimeServerPing(MinecraftClient.getInstance().getCurrentServerEntry());
-			} else {
-				currentServerPing = (int) MinecraftClient.getInstance().getCurrentServerEntry().ping;
-			}
+			getRealTimeServerPing(MinecraftClient.getInstance().getCurrentServerEntry());
 		} else if (MinecraftClient.getInstance().isIntegratedServerRunning()) {
 			currentServerPing = 1;
 		}

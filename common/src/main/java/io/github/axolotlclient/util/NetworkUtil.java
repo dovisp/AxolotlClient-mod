@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,64 +22,20 @@
 
 package io.github.axolotlclient.util;
 
-import java.io.IOException;
+import java.net.http.HttpClient;
+import java.time.Duration;
 
-import com.google.gson.JsonElement;
+import com.github.mizosoft.methanol.Methanol;
+import io.github.axolotlclient.AxolotlClientCommon;
 import lombok.experimental.UtilityClass;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
 
 @UtilityClass
 public class NetworkUtil {
 
-	public JsonElement getRequest(String url, CloseableHttpClient client) throws IOException {
-		return request(new HttpGet(url), client);
-	}
-
-	public JsonElement request(HttpUriRequest request, CloseableHttpClient client) throws IOException {
-		return request(request, client, false);
-	}
-
-	public JsonElement request(HttpUriRequest request, CloseableHttpClient client, boolean ignoreStatus) throws IOException {
-		HttpResponse response = client.execute(request);
-
-		if (!ignoreStatus) {
-			int status = response.getStatusLine().getStatusCode();
-			if (status != 200) {
-				throw new IOException("API request failed, status code " + status + "\nBody: " + EntityUtils.toString(response.getEntity()));
-			}
-		}
-
-		String responseBody = EntityUtils.toString(response.getEntity());
-		return GsonHelper.GSON.fromJson(responseBody, JsonElement.class);
-	}
-
-	public JsonElement postRequest(String url, String body, CloseableHttpClient client) throws IOException {
-		return postRequest(url, body, client, false);
-	}
-
-	public JsonElement postRequest(String url, String body, CloseableHttpClient client, boolean ignoreStatus) throws IOException {
-		RequestBuilder requestBuilder = RequestBuilder.post().setUri(url);
-		requestBuilder.setHeader("Content-Type", "application/json");
-		requestBuilder.setHeader("Accept", "application/json");
-		requestBuilder.setEntity(new StringEntity(body));
-		return request(requestBuilder.build(), client, ignoreStatus);
-	}
-
-	public JsonElement deleteRequest(String url, String body, CloseableHttpClient client) throws IOException {
-		RequestBuilder requestBuilder = RequestBuilder.delete().setUri(url);
-		requestBuilder.setHeader("Content-Type", "application/json");
-		requestBuilder.setEntity(new StringEntity(body));
-		return request(requestBuilder.build(), client);
-	}
-
-	public CloseableHttpClient createHttpClient(String id) {
-		return HttpClients.custom().setUserAgent("AxolotlClient/" + id).build();
+	public HttpClient createHttpClient(String id) {
+		return Methanol.newBuilder().userAgent("AxolotlClient/" + id + " (" + AxolotlClientCommon.getUAVersionString() + ") contact: moehreag<at>gmail.com")
+			.followRedirects(HttpClient.Redirect.NORMAL)
+			.requestTimeout(Duration.ofMinutes(1))
+			.executor(ThreadExecuter.service()).build();
 	}
 }

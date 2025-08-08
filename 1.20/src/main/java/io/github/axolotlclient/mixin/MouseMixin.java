@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,12 +22,15 @@
 
 package io.github.axolotlclient.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import io.github.axolotlclient.modules.hud.HudManager;
 import io.github.axolotlclient.modules.scrollableTooltips.ScrollableTooltips;
 import io.github.axolotlclient.modules.zoom.Zoom;
 import io.github.axolotlclient.util.events.Events;
 import io.github.axolotlclient.util.events.impl.MouseInputEvent;
 import net.minecraft.client.Mouse;
+import net.minecraft.client.gui.screen.Screen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -44,20 +47,27 @@ public abstract class MouseMixin {
 		}
 	}
 
-	@Inject(method = "onMouseScroll", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screen/Screen;mouseScrolled(DDDD)Z"))
-	public void axolotlclient$scrollTooltips(long window, double scrollDeltaX, double scrollDeltaY, CallbackInfo ci) {
+	@Inject(method = "onMouseScroll", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screen/Screen;mouseScrolled(DDD)Z"))
+	private void axolotlclient$scrollTooltips(long window, double scrollDeltaX, double scrollDeltaY, CallbackInfo ci) {
 		if (ScrollableTooltips.getInstance().enabled.get() && Math.signum(scrollDeltaY) != 0) {
 			ScrollableTooltips.getInstance().onScroll(Math.signum(scrollDeltaY) > 0);
 		}
 	}
 
 	@ModifyArg(method = "onMouseScroll", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/player/PlayerInventory;scrollInHotbar(D)V"))
-	public double axolotlclient$scrollZoom(double scrollAmount) {
+	private double axolotlclient$scrollZoom(double scrollAmount) {
 		if (scrollAmount != 0 && Zoom.scroll(scrollAmount)) {
 			return 0;
 		}
 
 		return scrollAmount;
+	}
+
+	@WrapOperation(method = "onMouseScroll", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screen/Screen;applyMousePressScrollNarratorDelay()V"))
+	private void wrapNarratorDelay(Screen instance, Operation<Void> original) {
+		if (instance != null) {
+			original.call(instance);
+		}
 	}
 
 	@Inject(method = "ignorePastPos", at = @At(value = "HEAD"))

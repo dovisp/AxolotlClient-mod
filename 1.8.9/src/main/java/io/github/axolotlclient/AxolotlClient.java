@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -25,15 +25,17 @@ package io.github.axolotlclient;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.UUID;
+import java.util.Locale;
 
-import com.mojang.blaze3d.platform.GlStateManager;
-import io.github.axolotlclient.AxolotlClientConfig.AxolotlClientConfigManager;
-import io.github.axolotlclient.AxolotlClientConfig.DefaultConfigManager;
-import io.github.axolotlclient.AxolotlClientConfig.common.ConfigManager;
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.OptionCategory;
-import io.github.axolotlclient.config.AxolotlClientConfig;
+import com.google.gson.JsonObject;
+import io.github.axolotlclient.AxolotlClientConfig.api.AxolotlClientConfig;
+import io.github.axolotlclient.AxolotlClientConfig.api.manager.ConfigManager;
+import io.github.axolotlclient.AxolotlClientConfig.api.options.OptionCategory;
+import io.github.axolotlclient.AxolotlClientConfig.impl.managers.VersionedJsonConfigManager;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.BooleanOption;
+import io.github.axolotlclient.api.API;
+import io.github.axolotlclient.api.APIOptions;
+import io.github.axolotlclient.api.StatusUpdateProviderImpl;
 import io.github.axolotlclient.modules.Module;
 import io.github.axolotlclient.modules.ModuleLoader;
 import io.github.axolotlclient.modules.auth.Auth;
@@ -42,7 +44,6 @@ import io.github.axolotlclient.modules.blur.MotionBlur;
 import io.github.axolotlclient.modules.freelook.Freelook;
 import io.github.axolotlclient.modules.hud.HudManager;
 import io.github.axolotlclient.modules.hypixel.HypixelMods;
-import io.github.axolotlclient.modules.hypixel.nickhider.NickHider;
 import io.github.axolotlclient.modules.particles.Particles;
 import io.github.axolotlclient.modules.renderOptions.BeaconBeam;
 import io.github.axolotlclient.modules.rpc.DiscordRPC;
@@ -56,106 +57,26 @@ import io.github.axolotlclient.modules.zoom.Zoom;
 import io.github.axolotlclient.util.FeatureDisabler;
 import io.github.axolotlclient.util.Logger;
 import io.github.axolotlclient.util.LoggerImpl;
-import io.github.axolotlclient.util.NetworkHelper;
+import io.github.axolotlclient.util.notifications.Notifications;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
-import net.legacyfabric.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawableHelper;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.resource.Resource;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.resource.Resource;
+import net.minecraft.locale.I18n;
+import net.minecraft.resource.Identifier;
+import net.ornithemc.osl.lifecycle.api.client.MinecraftClientEvents;
 
 public class AxolotlClient implements ClientModInitializer {
 
-	public static final Identifier badgeIcon = new Identifier("axolotlclient", "textures/badge.png");
-	public static final OptionCategory config = new OptionCategory("storedOptions");
+	public static final String MODID = "axolotlclient";
+	public static final HashMap<Identifier, Resource> runtimeResources = new HashMap<>();
+	public static final Identifier badgeIcon = new Identifier(MODID, "textures/badge.png");
+	public static final OptionCategory config = OptionCategory.create("storedOptions");
 	public static final BooleanOption someNiceBackground = new BooleanOption("defNoSecret", false);
 	public static final List<Module> modules = new ArrayList<>();
-	public static String modid = "AxolotlClient";
-	public static AxolotlClientConfig CONFIG;
+	public static final Logger LOGGER = new LoggerImpl();
+	public static String VERSION;
+	public static io.github.axolotlclient.config.AxolotlClientConfig CONFIG;
 	public static ConfigManager configManager;
-	public static HashMap<UUID, Boolean> playerCache = new HashMap<>();
-	public static HashMap<Identifier, Resource> runtimeResources = new HashMap<>();
-	public static Logger LOGGER = new LoggerImpl();
-	private static int tickTime = 0;
-
-	public static void addBadge(Entity entity) {
-		if (entity instanceof PlayerEntity && !entity.isSneaking()) {
-			if (AxolotlClient.CONFIG.showBadges.get() && AxolotlClient.isUsingClient(entity.getUuid())) {
-				GlStateManager.alphaFunc(516, 0.1F);
-				GlStateManager.enableDepthTest();
-				GlStateManager.enableAlphaTest();
-				MinecraftClient.getInstance().getTextureManager().bindTexture(AxolotlClient.badgeIcon);
-
-				int x = -(MinecraftClient.getInstance().textRenderer
-					.getStringWidth(entity.getUuid() == MinecraftClient.getInstance().player.getUuid()
-						? (NickHider.getInstance().hideOwnName.get() ? NickHider.getInstance().hiddenNameSelf.get()
-						: entity.getName().asFormattedString())
-						: (NickHider.getInstance().hideOtherNames.get() ? NickHider.getInstance().hiddenNameOthers.get()
-						: entity.getName().asFormattedString()))
-					/ 2
-					+ (AxolotlClient.CONFIG.customBadge.get() ? MinecraftClient.getInstance().textRenderer
-					.getStringWidth(" " + AxolotlClient.CONFIG.badgeText.get()) : 10));
-
-				GlStateManager.color(1, 1, 1, 1);
-
-				if (AxolotlClient.CONFIG.customBadge.get())
-					MinecraftClient.getInstance().textRenderer.draw(AxolotlClient.CONFIG.badgeText.get(), x, 0, -1,
-						AxolotlClient.CONFIG.useShadows.get());
-				else
-					DrawableHelper.drawTexture(x, 0, 0, 0, 8, 8, 8, 8);
-			}
-		}
-	}
-
-	public static boolean isUsingClient(UUID uuid) {
-		if (uuid == null) {
-			return false;
-		}
-
-		assert MinecraftClient.getInstance().player != null;
-		if (uuid == MinecraftClient.getInstance().player.getUuid()) {
-			return true;
-		} else {
-			return NetworkHelper.getOnline(uuid);
-		}
-	}
-
-	@Override
-	public void onInitializeClient() {
-		CONFIG = new AxolotlClientConfig();
-		config.add(someNiceBackground);
-
-		getModules();
-		addExternalModules();
-		CONFIG.init();
-		modules.forEach(Module::init);
-
-		CONFIG.config.addAll(CONFIG.getCategories());
-		CONFIG.config.add(config);
-
-		AxolotlClientConfigManager.getInstance().registerConfig(modid, CONFIG, configManager = new DefaultConfigManager(modid,
-			FabricLoader.getInstance().getConfigDir().resolve("AxolotlClient.json"), CONFIG.config));
-		AxolotlClientConfigManager.getInstance().addIgnoredName(modid, "x");
-		AxolotlClientConfigManager.getInstance().addIgnoredName(modid, "y");
-
-		modules.forEach(Module::lateInit);
-
-        /*FabricLoader.getInstance().getModContainer("axolotlclient").ifPresent(modContainer -> {
-            Optional<Path> optional = modContainer.findPath("resourcepacks/AxolotlClientUI.zip");
-            optional.ifPresent(path -> MinecraftClient.getInstance().getResourcePackLoader().method_10366(path.toFile()));
-        });*/
-
-		ClientTickEvents.END_CLIENT_TICK.register(client -> tickClient());
-
-		FeatureDisabler.init();
-
-		LOGGER.debug("Debug Output enabled, Logs will be quite verbose!");
-
-		LOGGER.info("AxolotlClient Initialized");
-	}
 
 	private static void getModules() {
 		modules.add(SkyResourceManager.getInstance());
@@ -174,22 +95,94 @@ public class AxolotlClient implements ClientModInitializer {
 		modules.add(UnfocusedFpsLimiter.getInstance());
 		modules.add(Tablist.getInstance());
 		modules.add(Auth.getInstance());
+		modules.add(APIOptions.getInstance());
 	}
 
 	private static void addExternalModules() {
 		modules.addAll(ModuleLoader.loadExternalModules());
 	}
 
-	public static void tickClient() {
-		modules.forEach(Module::tick);
+	@Override
+	public void onInitializeClient() {
 
-		if (tickTime >= 6000) {
-			//System.out.println("Cleared Cache of Other Players!");
-			if (playerCache.values().size() > 500) {
-				playerCache.clear();
+		VERSION = FabricLoader.getInstance().getModContainer(MODID).orElseThrow(IllegalStateException::new)
+			.getMetadata().getVersion().getFriendlyString();
+
+		CONFIG = new io.github.axolotlclient.config.AxolotlClientConfig();
+		config.add(someNiceBackground);
+
+		getModules();
+		addExternalModules();
+		CONFIG.init();
+
+		new AxolotlClientCommon(LOGGER, Notifications.getInstance(), () -> configManager);
+		new API(LOGGER, I18n::translate, new StatusUpdateProviderImpl(), APIOptions.getInstance());
+		MinecraftClientEvents.STOP.register(c -> API.getInstance().shutdown());
+
+		modules.forEach(Module::init);
+
+		CONFIG.getConfig().add(config);
+
+		AxolotlClientConfig.getInstance().register(configManager = new VersionedJsonConfigManager(AxolotlClientCommon.getInstance().getMainConfigFile(),
+			CONFIG.getConfig(), 4, (oldVersion, newVersion, config, json) -> {
+			if (oldVersion.getMajor() <= 1) {
+				if (json.has("hud")) {
+					var hud = json.get("hud").getAsJsonObject();
+					if (hud.has("keystrokehud")) {
+						var keystrokes = hud.get("keystrokehud")
+							.getAsJsonObject();
+						var mousemovement = new JsonObject();
+						mousemovement.addProperty("enabled", keystrokes.get("enabled").getAsBoolean() && keystrokes.get("mousemovement").getAsBoolean());
+						mousemovement.addProperty("mouseMovementIndicator", keystrokes.get("mouseMovementIndicator").getAsString());
+						mousemovement.addProperty("mouseMovementIndicatorOuter", keystrokes.get("mouseMovementIndicatorOuter").getAsString());
+						hud.add("mousemovementhud", mousemovement);
+					}
+				}
 			}
-			tickTime = 0;
-		}
-		tickTime++;
+			if (oldVersion.getMajor() <= 2) {
+				if (json.has("hud")) {
+					var hud = json.get("hud").getAsJsonObject();
+					if (hud.has("armorhud")) {
+						var armorhud = hud.get("armorhud").getAsJsonObject();
+						if (armorhud.has("armorhud.main_hand_item_top")) {
+							var mainItemTop = armorhud.get("armorhud.main_hand_item_top").getAsBoolean();
+							if (mainItemTop) {
+								armorhud.addProperty("armorhud.main_hand_item_position", "armorhud.main_hand_item_position.top");
+							}
+						}
+					}
+				}
+			}
+			if (oldVersion.getMajor() <= 3) {
+				if (json.has("storedOptions")) {
+					var hiddenOptions = json.get("storedOptions").getAsJsonObject();
+
+					JsonObject apiOptions;
+					if (json.has("api.category")) {
+						apiOptions = json.get("api.category").getAsJsonObject();
+					} else {
+						apiOptions = new JsonObject();
+						json.add("api.category", apiOptions);
+					}
+
+					apiOptions.addProperty("api.privacy_policy_accepted", "privacy_policy_state."+hiddenOptions.get("privacyPolicyAccepted").getAsString().toLowerCase(Locale.ROOT));
+				}
+			}
+			return json;
+		}));
+		configManager.load();
+		configManager.suppressName("x");
+		configManager.suppressName("y");
+		configManager.suppressName(config.getName());
+
+		modules.forEach(Module::lateInit);
+
+		MinecraftClientEvents.TICK_END.register(client -> modules.forEach(Module::tick));
+
+		FeatureDisabler.init();
+
+		LOGGER.debug("Debug Output enabled, Logs will be quite verbose!");
+
+		LOGGER.info("AxolotlClient Initialized");
 	}
 }

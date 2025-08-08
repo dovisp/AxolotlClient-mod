@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,16 +22,16 @@
 
 package io.github.axolotlclient.modules.tablist;
 
+import com.mojang.blaze3d.platform.GlStateManager;
 import io.github.axolotlclient.AxolotlClient;
-import io.github.axolotlclient.AxolotlClientConfig.Color;
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.ColorOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.OptionCategory;
+import io.github.axolotlclient.AxolotlClientConfig.api.options.OptionCategory;
+import io.github.axolotlclient.AxolotlClientConfig.api.util.Color;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.BooleanOption;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.ColorOption;
 import io.github.axolotlclient.modules.AbstractModule;
 import io.github.axolotlclient.modules.hud.util.DrawUtil;
 import lombok.Getter;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.client.network.PlayerInfo;
 
 public class Tablist extends AbstractModule {
 
@@ -42,6 +42,7 @@ public class Tablist extends AbstractModule {
 	public final BooleanOption showFooter = new BooleanOption("showFooter", true);
 	public final BooleanOption alwaysShowHeadLayer = new BooleanOption("alwaysShowHeadLayer", false);
 	private final BooleanOption numericalPing = new BooleanOption("numericalPing", false);
+	private final BooleanOption smallPingText = new BooleanOption("tablist.small_ping_text", false);
 	private final ColorOption pingColor0 = new ColorOption("pingColor0", Color.parse("#FF00FFFF"));
 	private final ColorOption pingColor1 = new ColorOption("pingColor1", Color.parse("#FF00FF00"));
 	private final ColorOption pingColor2 = new ColorOption("pingColor2", Color.parse("#FF008800"));
@@ -49,39 +50,58 @@ public class Tablist extends AbstractModule {
 	private final ColorOption pingColor4 = new ColorOption("pingColor4", Color.parse("#FFFF8800"));
 	private final ColorOption pingColor5 = new ColorOption("pingColor5", Color.parse("#FFFF0000"));
 	private final BooleanOption shadow = new BooleanOption("shadow", true);
-	private final OptionCategory tablist = new OptionCategory("tablist");
+	public final BooleanOption backgroundEnabled = new BooleanOption("enable_background", true);
+	public final BooleanOption customBackgroundColor = new BooleanOption("custom_background_color", false);
+	public final ColorOption backgroundColor = new ColorOption("bgcolor", new Color(Integer.MIN_VALUE));
+	public final OptionCategory tablist = OptionCategory.create("tablist");
 
 	@Override
 	public void init() {
-		tablist.add(numericalPing, showPlayerHeads, shadow, alwaysShowHeadLayer);
+		tablist.add(numericalPing, smallPingText, showPlayerHeads, shadow, showHeader, showFooter, alwaysShowHeadLayer);
 		tablist.add(pingColor0, pingColor1, pingColor2, pingColor3, pingColor4, pingColor5);
+		tablist.add(backgroundEnabled, customBackgroundColor, backgroundColor);
 
 		AxolotlClient.CONFIG.rendering.add(tablist);
 	}
 
-	public boolean renderNumericPing(int width, int x, int y, PlayerListEntry entry) {
+	public boolean renderNumericPing(int width, int x, int y, PlayerInfo entry) {
 		if (numericalPing.get()) {
 			Color current;
-			if (entry.getLatency() < 0) {
+			if (entry.getPing() < 0) {
 				current = pingColor0.get();
-			} else if (entry.getLatency() < 150) {
+			} else if (entry.getPing() < 150) {
 				current = pingColor1.get();
-			} else if (entry.getLatency() < 300) {
+			} else if (entry.getPing() < 300) {
 				current = pingColor2.get();
-			} else if (entry.getLatency() < 600) {
+			} else if (entry.getPing() < 600) {
 				current = pingColor3.get();
-			} else if (entry.getLatency() < 1000) {
+			} else if (entry.getPing() < 1000) {
 				current = pingColor4.get();
 			} else {
 				current = pingColor5.get();
 			}
 
-			DrawUtil.drawString(
-				String.valueOf(entry.getLatency()),
-				x + width - 1 - MinecraftClient.getInstance().textRenderer.getStringWidth(String.valueOf(entry.getLatency())),
-				y, current, shadow.get());
+			String text = applySmallText(String.valueOf(entry.getPing()));
+
+			GlStateManager.pushMatrix();
+			GlStateManager.translatef(x + width - 1, y, 0);
+			GlStateManager.translatef(-client.textRenderer.getWidth(text), 0, 0);
+			if (smallPingText.get()) {
+				GlStateManager.translatef(0, -2, 0);
+			}
+			DrawUtil.drawString(text, 0, 0, current, shadow.get());
+			GlStateManager.popMatrix();
 			return true;
 		}
 		return false;
+	}
+
+	private String applySmallText(String text) {
+		if (smallPingText.get()) {
+			StringBuilder builder = new StringBuilder(text.length());
+			text.chars().map(i -> i >= '0' && i <= '9' ? i + 0x2050 : i).forEach(builder::appendCodePoint);
+			return builder.toString();
+		}
+		return text;
 	}
 }

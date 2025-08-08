@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,163 +22,206 @@
 
 package io.github.axolotlclient.modules.auth;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.InetSocketAddress;
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.util.AbstractMap;
-import java.util.ArrayList;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
-import com.google.common.io.Files;
+import com.github.mizosoft.methanol.FormBodyPublisher;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
-import com.sun.net.httpserver.HttpServer;
+import io.github.axolotlclient.AxolotlClientCommon;
+import io.github.axolotlclient.util.GsonHelper;
 import io.github.axolotlclient.util.Logger;
 import io.github.axolotlclient.util.NetworkUtil;
-import io.github.axolotlclient.util.OSUtil;
-import org.apache.commons.io.IOUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.util.EntityUtils;
 
 // Partly oriented on In-Game-Account-Switcher by The-Fireplace, VidTu
 public class MSAuth {
 
 	private static final String CLIENT_ID = "938592fc-8e01-4c6d-b56d-428c7d9cf5ea"; // AxolotlClient MSA ClientID
-	private static final int PORT = 59281;
-	private static final String FALLBACK_RESPONSE = "You may now close this tab.";
+	private static final String SCOPES = "XboxLive.signin offline_access";
+	private static final String XBL_AUTH_URL = "https://user.auth.xboxlive.com/user/authenticate";
+	private static final String MS_DEVICE_CODE_LOGIN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode?mkt=";
+	private static final String MS_TOKEN_LOGIN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+	private static final String XBL_XSTS_AUTH_URL = "https://xsts.auth.xboxlive.com/xsts/authorize";
+	private static final String MC_LOGIN_WITH_XBOX_URL = "https://api.minecraftservices.com/authentication/login_with_xbox";
 
+	private final Supplier<String> languageSupplier;
 	private final Logger logger;
 	private final Accounts accounts;
-	private HttpServer server;
+	private final HttpClient client;
 
-	public MSAuth(Logger logger, Accounts accounts) {
+	public static MSAuth INSTANCE;
+
+	public MSAuth(Logger logger, Accounts accounts, Supplier<String> languageSupplier) {
 		this.logger = logger;
 		this.accounts = accounts;
+		this.languageSupplier = languageSupplier;
+		this.client = getHttpClient();
+		INSTANCE = this;
 	}
 
-	public void startAuth(Runnable whenFinished) {
-		try {
-			OSUtil.getOS().open(new URI("https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize" +
-				"?client_id=" + CLIENT_ID +
-				"&response_type=code" +
-				"&scope=XboxLive.signin%20XboxLive.offline_access" +
-				"&redirect_uri=http://localhost:" + PORT +
-				"&prompt=select_account"), logger);
-			msAuthCode(whenFinished);
-		} catch (URISyntaxException e) {
-			throw new RuntimeException(e);
-		}
-	}
+	public CompletableFuture<?> startDeviceAuth() {
 
-	public void msAuthCode(Runnable whenFinished) {
-		try {
-			server = HttpServer.create(new InetSocketAddress("localhost", PORT), 0);
-			server.createContext("/", ex -> {
-				logger.debug("Microsoft authentication callback request: " + ex.getRemoteAddress());
-				byte[] b = null;
-				try (InputStream in = this.getClass().getResourceAsStream("/assets/axolotlclient/redirect.html")) {
-					if (in != null) {
-						b = IOUtils.toByteArray(in);
+		String[] lang = languageSupplier.get().replace("_", "-").split("-");
+		logger.debug("starting ms device auth flow");
+		// https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code#device-authorization-response
+		HttpRequest.Builder builder = HttpRequest.newBuilder()
+			.POST(FormBodyPublisher.newBuilder()
+				.query("client_id", CLIENT_ID)
+				.query("scope", SCOPES).build())
+			.header("ContentType", "application/x-www-form-urlencoded")
+			.uri(URI.create(MS_DEVICE_CODE_LOGIN_URL + lang[0] + "-" + lang[1].toUpperCase(Locale.ROOT)));
+		return requestJson(builder.build())
+			.thenApply(object -> {
+				int expiresIn = object.get("expires_in").getAsInt();
+				String deviceCode = object.get("device_code").getAsString();
+				String userCode = object.get("user_code").getAsString();
+				String verificationUri = object.get("verification_uri").getAsString();
+				int interval = object.get("interval").getAsInt();
+				String message = object.get("message").getAsString();
+				logger.debug("displaying device code to user");
+				DeviceFlowData data = new DeviceFlowData(message, verificationUri, deviceCode, userCode, expiresIn, interval);
+				accounts.displayDeviceCode(data);
+				return data;
+			})
+			.thenApply(data -> {
+				logger.debug("waiting for user authorization...");
+				long start = System.currentTimeMillis();
+				while (System.currentTimeMillis() < data.getExpiresIn() * 1000L + start) {
+					if ((System.currentTimeMillis() - start) % data.getInterval() == 0) {
+						HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().POST(
+								FormBodyPublisher.newBuilder().query("client_id", CLIENT_ID)
+									.query("device_code", data.getDeviceCode())
+									.query("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+									.build()
+							)
+							.uri(URI.create(MS_TOKEN_LOGIN_URL));
+						JsonObject response = requestJson(requestBuilder.build()).join();
+
+						if (response.has("refresh_token") && response.has("access_token")) {
+							data.setStatus("auth.working");
+							return authenticateFromMSTokens(response.get("access_token").getAsString(),
+								response.get("refresh_token").getAsString())
+								.thenAccept(o -> {
+									o.ifPresent(a -> {
+										int index = accounts.getAccounts().indexOf(a);
+										if (index == -1) {
+											accounts.getAccounts().add(a);
+										} else {
+											accounts.getAccounts().set(index, a);
+										}
+										accounts.login(a);
+										accounts.save();
+										data.setStatus("auth.finished");
+									});
+								}).join();
+						}
+
+						if (response.has("error")) {
+							String error = response.get("error").getAsString();
+							switch (error) {
+								case "authorization_pending":
+									continue;
+								case "bad_verification_code":
+									throw new IllegalStateException("Bad verification code! " + response);
+								case "authorization_declined":
+								case "expired_token":
+								default:
+									break;
+							}
+						}
 					}
 				}
-				if (b == null) {
-					b = FALLBACK_RESPONSE.getBytes(StandardCharsets.UTF_8);
-				}
-				ex.getResponseHeaders().add("Content-Type", "text/html");
-				ex.sendResponseHeaders(307, b.length);
-				ex.getResponseBody().write(b);
-				String query = ex.getRequestURI().getQuery();
-				close();
-				authenticate(query, whenFinished);
+				return null;
 			});
-			server.start();
-		} catch (Throwable t) {
-			close();
-		}
 	}
 
-	public void close() {
-		if (server != null) {
-			server.stop(0);
-		}
-	}
-
-	public void authenticate(String params, Runnable whenFinished) {
-		try {
-			String authCode = params.replace("code=", "");
-			logger.debug("getting ms token... ");
-			Map.Entry<String, String> msTokens = getMSTokens(authCode);
+	private CompletableFuture<Optional<Account>> authenticateFromMSTokens(String accessToken, String refreshToken) {
+		return CompletableFuture.supplyAsync(() -> {
 			logger.debug("getting xbl token... ");
-			String xblToken = authXbl(msTokens.getKey());
-			logger.debug("getting xsts token... ");
-			Map.Entry<String, String> xsts = authXstsMC(xblToken);
+			XblData xbl = authXbl(accessToken).join();
+			logger.debug("getting xsts token...");
+			XblData xsts = authXstsMC(xbl.token()).join();
 			logger.debug("getting mc auth token...");
-			String accessToken = authMC(xsts.getValue(), xsts.getKey());
-			if (checkOwnership(accessToken)) {
-				logger.debug("finished auth flow!");
-				MSAccount account = new MSAccount(getMCProfile(accessToken), accessToken, msTokens.getValue());
-				if (accounts.isContained(account.getUuid())) {
-					accounts.getAccounts().removeAll(accounts.getAccounts().stream().filter(acc -> acc.getUuid().equals(account.getUuid())).collect(Collectors.toList()));
-				}
-				accounts.addAccount(account);
-				accounts.login(account);
-				whenFinished.run();
-			} else {
-				throw new IllegalStateException("Do you actually own the game?");
+			MCXblData mc = authMC(xsts.displayClaims().uhs(), xsts.token()).join();
+
+			JsonObject profileJson = getMCProfile(mc.accessToken()).join();
+			if (profileJson.has("error") && "NOT_FOUND".equals(profileJson.get("error").getAsString())) {
+				AxolotlClientCommon.getInstance().getNotificationProvider().addStatus("auth.notif.login.failed", "auth.notif.login.failed.no_profile");
+				return Optional.empty();
 			}
-		} catch (Exception e) {
-			logger.error("Failed to authenticate!", e);
+			logger.debug("retrieving entitlements...");
+			if (!checkOwnership(mc.accessToken()).join()) {
+				AxolotlClientCommon.getInstance().getNotificationProvider().addStatus("auth.notif.login.failed", "auth.notif.login.failed.no_entitlement");
+				logger.warn("Failed to check for game ownership!");
+				return Optional.empty();
+			}
+			logger.debug("getting profile...");
+			MCProfile profile = MCProfile.get(profileJson);
+			return Optional.of(new Account(profile.name(), profile.id(), mc.accessToken(), mc.expiration(), refreshToken, accessToken));
+		});
+	}
+
+	private record MCProfile(String id, String name, List<Skin> skins, List<Cape> capes) {
+		public static MCProfile get(JsonObject json) {
+			return new MCProfile(json.get("id").getAsString(), json.get("name").getAsString(),
+				GsonHelper.jsonArrayToStream(json.getAsJsonArray("skins"))
+					.map(s -> Skin.get(s.getAsJsonObject()))
+					.toList(), GsonHelper.jsonArrayToStream(json.getAsJsonArray("capes"))
+				.map(s -> Cape.get(s.getAsJsonObject()))
+				.toList());
 		}
+
+		public record Skin(String id, String state, String url, String variant, String textureKey) {
+			public static Skin get(JsonObject object) {
+				return new Skin(object.get("id").getAsString(),
+					object.get("state").getAsString(),
+					object.get("url").getAsString(),
+					object.get("variant").getAsString(),
+					object.get("textureKey").getAsString());
+			}
+		}
+
+		public record Cape(String id, String state, String url, String alias) {
+			public static Cape get(JsonObject object) {
+				return new Cape(object.get("id").getAsString(), object.get("state").getAsString(), object.get("url").getAsString(), object.get("alias").getAsString());
+			}
+		}
+
 	}
 
-	public Map.Entry<String, String> getMSTokens(String authCode) throws IOException {
-		List<NameValuePair> form = new ArrayList<>();
-		form.add(new BasicNameValuePair("client_id", CLIENT_ID));
-		form.add(new BasicNameValuePair("code", authCode));
-		form.add(new BasicNameValuePair("scope", "XboxLive.signin XboxLive.offline_access"));
-		form.add(new BasicNameValuePair("redirect_uri", "http://localhost:" + PORT));
-		form.add(new BasicNameValuePair("grant_type", "authorization_code"));
-		RequestBuilder requestBuilder = RequestBuilder.post()
-			.setUri("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
-			.addHeader("ContentType", "application/x-www-form-urlencoded")
-			.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
-		JsonObject response = NetworkUtil.request(requestBuilder.build(), getHttpClient(), true).getAsJsonObject();
-
-		return new AbstractMap.SimpleImmutableEntry<>(response.get("access_token").getAsString(), response.get("refresh_token").getAsString());
-	}
-
-	public String authXbl(String code) throws IOException {
+	private CompletableFuture<XblData> authXbl(String code) {
 		JsonObject object = new JsonObject();
 		JsonObject properties = new JsonObject();
-		properties.add("AuthMethod", new JsonPrimitive("RPS"));
-		properties.add("SiteName", new JsonPrimitive("user.auth.xboxlive.com"));
-		properties.add("RpsTicket", new JsonPrimitive("d=" + code));
+		properties.addProperty("AuthMethod", "RPS");
+		properties.addProperty("SiteName", "user.auth.xboxlive.com");
+		properties.addProperty("RpsTicket", "d=" + code);
 		object.add("Properties", properties);
-		object.add("RelyingParty", new JsonPrimitive("http://auth.xboxlive.com"));
-		object.add("TokenType", new JsonPrimitive("JWT"));
-		RequestBuilder requestBuilder = RequestBuilder.post()
-			.setUri("https://user.auth.xboxlive.com/user/authenticate")
-			.setEntity(new StringEntity(object.toString(), ContentType.APPLICATION_JSON))
-			.addHeader("Content-Type", "application/json")
-			.addHeader("Accept", "application/json");
+		object.addProperty("RelyingParty", "http://auth.xboxlive.com");
+		object.addProperty("TokenType", "JWT");
+		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+			.uri(URI.create(XBL_AUTH_URL))
+			.POST(HttpRequest.BodyPublishers.ofString(object.toString()))
+			.header("Content-Type", "application/json")
+			.header("Accept", "application/json");
 
-		JsonObject response = NetworkUtil.request(requestBuilder.build(), getHttpClient(), true).getAsJsonObject();
-		return response.get("Token").getAsString();
+		return requestJson(requestBuilder.build()).thenApply(response -> new XblData(Instant.parse(response.get("IssueInstant").getAsString()), Instant.parse(response.get("NotAfter").getAsString()),
+			response.get("Token").getAsString(), new XblData.DisplayClaims(response.get("DisplayClaims").getAsJsonObject().get("xui").getAsJsonArray().get(0).getAsJsonObject().get("uhs").getAsString())));
 	}
 
-	public Map.Entry<String, String> authXstsMC(String xblToken) throws IOException {
+	private record XblData(Instant issueInstant, Instant notAfter, String token, DisplayClaims displayClaims) {
+		private record DisplayClaims(String uhs) {
+		}
+	}
+
+	private CompletableFuture<XblData> authXstsMC(String xblToken) {
 		String body = "{" +
 			"    \"Properties\": {" +
 			"        \"SandboxId\": \"RETAIL\"," +
@@ -189,77 +232,83 @@ public class MSAuth {
 			"    \"RelyingParty\": \"rp://api.minecraftservices.com/\"," +
 			"    \"TokenType\": \"JWT\"" +
 			" }";
-		JsonObject response = NetworkUtil.postRequest("https://xsts.auth.xboxlive.com/xsts/authorize", body, getHttpClient(), true).getAsJsonObject();
-		return new AbstractMap.SimpleImmutableEntry<>(response.get("Token").getAsString(), response.get("DisplayClaims").getAsJsonObject().get("xui").getAsJsonArray().get(0).getAsJsonObject().get("uhs").getAsString());
+		return requestJson(HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(body)).uri(URI.create(XBL_XSTS_AUTH_URL)).build())
+			.thenApply(response -> new XblData(Instant.parse(response.get("IssueInstant").getAsString()), Instant.parse(response.get("NotAfter").getAsString()),
+				response.get("Token").getAsString(), new XblData.DisplayClaims(response.get("DisplayClaims").getAsJsonObject().get("xui").getAsJsonArray().get(0).getAsJsonObject().get("uhs").getAsString())));
 	}
 
-	public String authMC(String userhash, String xsts) throws IOException {
-		return NetworkUtil.postRequest("https://api.minecraftservices.com/authentication/login_with_xbox",
-			"{\"identityToken\": \"XBL3.0 x=" + userhash + ";" + xsts + "\"\n}",
-			getHttpClient(), true).getAsJsonObject().get("access_token").getAsString();
+	private CompletableFuture<MCXblData> authMC(String userhash, String xsts) {
+		String body = "{\"identityToken\": \"XBL3.0 x=" + userhash + ";" + xsts + "\"\n}";
+		return requestJson(HttpRequest.newBuilder(URI.create(MC_LOGIN_WITH_XBOX_URL)).POST(HttpRequest.BodyPublishers.ofString(body)).build())
+			.thenApply(response -> new MCXblData(response.get("username").getAsString(),
+				response.get("access_token").getAsString(),
+				Instant.now().plus(response.get("expires_in").getAsLong(), ChronoUnit.SECONDS)));
 	}
 
-	public boolean checkOwnership(String accessToken) throws IOException {
-		JsonObject response = NetworkUtil.request(RequestBuilder.get()
-			.setUri("https://api.minecraftservices.com/entitlements/mcstore")
-			.addHeader("Authorization", "Bearer " + accessToken).build(), getHttpClient(), true).getAsJsonObject();
-
-		return response.get("items").getAsJsonArray().size() != 0;
+	private record MCXblData(String username, String accessToken, Instant expiration) {
 	}
 
-	public JsonObject getMCProfile(String accessToken) throws IOException {
-		JsonObject profile = NetworkUtil.request(RequestBuilder.get()
-			.setUri("https://api.minecraftservices.com/minecraft/profile")
-			.addHeader("Authorization", "Bearer " + accessToken).build(), getHttpClient(), true).getAsJsonObject();
-		saveSkinFile(profile.get("skins").getAsJsonArray().get(0).getAsJsonObject().get("url").getAsString(), profile.get("id").getAsString());
-		return profile;
+	private CompletableFuture<Boolean> checkOwnership(String accessToken) {
+		return requestJson(HttpRequest
+			.newBuilder(URI.create("https://api.minecraftservices.com/entitlements/mcstore"))
+			.header("Authorization", "Bearer " + accessToken).build())
+			.thenApply(res -> GsonHelper.jsonArrayToStream(res.get("items").getAsJsonArray())
+				.anyMatch(e -> e.isJsonObject() && e.getAsJsonObject().has("name")
+					&& "game_minecraft".equals(e.getAsJsonObject().get("name").getAsString())));
 	}
 
-	private CloseableHttpClient getHttpClient() {
+	private CompletableFuture<JsonObject> getMCProfile(String accessToken) {
+		return requestJson(HttpRequest.newBuilder().GET()
+			.uri(URI.create("https://api.minecraftservices.com/minecraft/profile"))
+			.header("Authorization", "Bearer " + accessToken).build());
+	}
+
+	private HttpClient getHttpClient() {
 		return NetworkUtil.createHttpClient("Auth");
 	}
 
-	public void saveSkinFile(String url, String uuid) throws IOException {
-		RequestBuilder requestBuilder = RequestBuilder.get().setUri(url);
-		try (CloseableHttpClient client = getHttpClient()) {
-			HttpResponse response = client.execute(requestBuilder.build());
-			//noinspection UnstableApiUsage
-			Files.write(EntityUtils.toByteArray(response.getEntity()), accounts.getSkinFile(uuid));
-		}
+	public CompletableFuture<Optional<Account>> refreshToken(String token, Account account) {
+		return CompletableFuture.supplyAsync(() -> {
+			logger.debug("refreshing auth code... ");
+			HttpRequest.Builder requestBuilder = HttpRequest
+				.newBuilder(URI.create(MS_TOKEN_LOGIN_URL))
+				.POST(FormBodyPublisher.newBuilder()
+					.query("client_id", CLIENT_ID)
+					.query("refresh_token", token)
+					.query("scope", SCOPES)
+					.query("grant_type", "refresh_token").build())
+				.header("Accept", "application/json");
 
+			JsonObject response = requestJson(requestBuilder.build()).join();
+
+			if (response.has("error_codes")) {
+				int errorCode = response.get("error_codes").getAsJsonArray().get(0).getAsInt();
+				if (errorCode == 70000 || errorCode == 70012) {
+					accounts.showAccountsExpiredScreen(account);
+				} else {
+					logger.warn("Login error, unexpected response: " + response);
+					AxolotlClientCommon.getInstance().getNotificationProvider().addStatus("auth.notif.refresh.error", "auth.notif.refresh.error.unexpected_response");
+				}
+				return Optional.empty();
+			}
+
+			logger.debug("authenticating...");
+			Optional<Account> opt = authenticateFromMSTokens(response.get("access_token").getAsString(),
+				response.get("refresh_token").getAsString()).join();
+			opt.ifPresent(refreshed -> {
+				account.setRefreshToken(refreshed.getRefreshToken());
+				account.setAuthToken(refreshed.getAuthToken());
+				account.setName(refreshed.getName());
+				account.setMsaToken(refreshed.getMsaToken());
+				account.setExpiration(refreshed.getExpiration());
+				accounts.save();
+			});
+			return opt;
+		});
 	}
 
-	public Map.Entry<String, String> refreshToken(String token, String name) {
-		try {
-			logger.debug("refreshing auth code... ");
-			List<NameValuePair> form = new ArrayList<>();
-			form.add(new BasicNameValuePair("client_id", CLIENT_ID));
-			form.add(new BasicNameValuePair("refresh_token", token));
-			form.add(new BasicNameValuePair("scope", "XboxLive.signin XboxLive.offline_access"));
-			form.add(new BasicNameValuePair("grant_type", "refresh_token"));
-			RequestBuilder requestBuilder = RequestBuilder.post()
-				.setUri("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
-				.addHeader("Content-Type", "application/x-www-form-urlencoded")
-				.setEntity(new UrlEncodedFormEntity(form))
-				.addHeader("Accept", "application/json");
-
-			JsonObject response = NetworkUtil.request(requestBuilder.build(), getHttpClient(), true).getAsJsonObject();
-			String refreshToken = response.get("refresh_token").getAsString();
-
-			logger.debug("getting xbl token... ");
-			String xblToken = authXbl(response.get("access_token").getAsString());
-			logger.debug("getting xsts token... ");
-			Map.Entry<String, String> xsts = authXstsMC(xblToken);
-			logger.debug("getting mc auth token...");
-			String accessToken = authMC(xsts.getValue(), xsts.getKey());
-			if (checkOwnership(accessToken)) {
-				logger.info("Successfully refreshed token for " + name + "!");
-
-				return new AbstractMap.SimpleImmutableEntry<>(accessToken, refreshToken);
-			}
-		} catch (Exception e) {
-			logger.error("Failed to refresh Auth token! ", e);
-		}
-		return new AbstractMap.SimpleImmutableEntry<>(null, null);
+	private CompletableFuture<JsonObject> requestJson(HttpRequest request) {
+		return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+			.thenApply(res -> GsonHelper.fromJson(res.body()));
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,11 +22,20 @@
 
 package io.github.axolotlclient.modules.hud.gui.hud.item;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.stream.Stream;
 
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.Option;
+import io.github.axolotlclient.AxolotlClientConfig.api.options.Option;
+import io.github.axolotlclient.AxolotlClientConfig.api.util.Colors;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.BooleanOption;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.ColorOption;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.EnumOption;
+import io.github.axolotlclient.modules.hud.gui.component.DynamicallyPositionable;
 import io.github.axolotlclient.modules.hud.gui.entry.TextHudEntry;
+import io.github.axolotlclient.modules.hud.gui.layout.AnchorPoint;
 import io.github.axolotlclient.modules.hud.util.DrawPosition;
 import io.github.axolotlclient.modules.hud.util.ItemUtil;
 import net.minecraft.client.gui.GuiGraphics;
@@ -43,7 +52,7 @@ import net.minecraft.util.Identifier;
  * @license GPL-3.0
  */
 
-public class ArmorHud extends TextHudEntry {
+public class ArmorHud extends TextHudEntry implements DynamicallyPositionable {
 
 	public static final Identifier ID = new Identifier("kronhud", "armorhud");
 
@@ -51,6 +60,14 @@ public class ArmorHud extends TextHudEntry {
 	private final ItemStack[] placeholderStacks = new ItemStack[]{new ItemStack(Items.IRON_BOOTS),
 		new ItemStack(Items.IRON_LEGGINGS), new ItemStack(Items.IRON_CHESTPLATE), new ItemStack(Items.IRON_HELMET),
 		new ItemStack(Items.IRON_SWORD)};
+	private final BooleanOption showDurabilityNumber = new BooleanOption("show_durability_num", false);
+	private final BooleanOption showMaxDurabilityNumber = new BooleanOption("show_max_durability_num", false);
+	private final BooleanOption customDurabilityNumColor = new BooleanOption("armorhud.custom_durability_num_color", false);
+	private final ColorOption durabilityNumColor = new ColorOption("armorhud.durability_num_color", Colors.WHITE);
+	private final EnumOption<MainHandItemPosition> mainHandItemPosition = new EnumOption<>("armorhud.main_hand_item_position", MainHandItemPosition.class, MainHandItemPosition.BOTTOM);
+
+	private final EnumOption<AnchorPoint> anchor = new EnumOption<>("anchorpoint", AnchorPoint.class,
+		AnchorPoint.TOP_RIGHT);
 
 	public ArmorHud() {
 		super(20, 100, true);
@@ -58,12 +75,41 @@ public class ArmorHud extends TextHudEntry {
 
 	@Override
 	public void renderComponent(GuiGraphics graphics, float delta) {
+		int width = 20;
+		int height = 100;
+		boolean boundsChanged = false;
+		boolean showDurability = showDurabilityNumber.get();
+		boolean showMaxDurability = showMaxDurabilityNumber.get();
+		int labelWidth = showDurability || showMaxDurability ? Stream.concat(Stream.of(mainHandItemPosition.get() == MainHandItemPosition.DISABLED ? null :
+				client.player.getInventory().getMainHandStack()), client.player.getInventory().armor.stream())
+			.filter(Objects::nonNull)
+			.map(stack -> showDurability && showMaxDurability ? (stack.getMaxDamage() - stack.getDamage()) + "/" + stack.getMaxDamage() : String.valueOf((showDurability ? stack.getMaxDamage() - stack.getDamage() : stack.getMaxDamage())))
+			.mapToInt(text -> client.textRenderer.getWidth(text) + 2).max().orElse(0) : 0;
+		width += labelWidth;
+		if (width != getWidth()) {
+			setWidth(width);
+			boundsChanged = true;
+		}
 		DrawPosition pos = getPos();
-		int lastY = 2 + (4 * 20);
-		renderMainItem(graphics, client.player.getInventory().getMainHandStack(), pos.x() + 2, pos.y() + lastY);
-		lastY = lastY - 20;
+		MainHandItemPosition mainHandItemTop = mainHandItemPosition.get();
+		if (mainHandItemTop == MainHandItemPosition.DISABLED) {
+			height -= 20;
+		}
+		if (height != getHeight()) {
+			setHeight(height);
+			boundsChanged = true;
+		}
+		if (boundsChanged) {
+			onBoundsUpdate();
+		}
+		int lastY = 2 + (height-20);
+		if (mainHandItemTop == MainHandItemPosition.BOTTOM) {
+			renderMainItem(graphics, client.player.getInventory().getMainHandStack(), pos.x() + 2, pos.y() + lastY, labelWidth);
+			lastY = lastY - 20;
+		}
 		for (int i = 0; i <= 3; i++) {
 			ItemStack stack = client.player.getInventory().getArmorStack(i).copy();
+			String label = null;
 			if (showProtLvl.get() && stack.hasEnchantments()) {
 				NbtList nbtList = stack.getEnchantments();
 				if (nbtList != null) {
@@ -71,17 +117,22 @@ public class ArmorHud extends TextHudEntry {
 						int enchantId = nbtList.getCompound(k).getShort("id");
 						int level = nbtList.getCompound(k).getShort("lvl");
 						if (enchantId == 0 && Enchantment.byRawId(enchantId) != null) {
-							stack.setCount(level);
+							label = String.valueOf(level);
 						}
 					}
 				}
 			}
-			renderItem(graphics, stack, pos.x() + 2, lastY + pos.y());
+			renderItem(graphics, stack, pos.x() + 2, lastY + pos.y(), labelWidth, label);
 			lastY = lastY - 20;
+		}
+		if (mainHandItemTop == MainHandItemPosition.TOP) {
+			renderMainItem(graphics, client.player.getInventory().getMainHandStack(), pos.x() + 2, pos.y() + lastY, labelWidth);
 		}
 	}
 
-	public void renderMainItem(GuiGraphics graphics, ItemStack stack, int x, int y) {
+	public void renderMainItem(GuiGraphics graphics, ItemStack stack, int x, int y, int offset) {
+		renderDurabilityNumber(graphics, stack, x, y);
+		x += offset;
 		String total = String.valueOf(ItemUtil.getTotal(client, stack));
 		if (total.equals("1")) {
 			total = null;
@@ -90,21 +141,63 @@ public class ArmorHud extends TextHudEntry {
 		graphics.drawItemInSlot(client.textRenderer, stack, x, y, total);
 	}
 
-	public void renderItem(GuiGraphics graphics, ItemStack stack, int x, int y) {
+	public void renderItem(GuiGraphics graphics, ItemStack stack, int x, int y, int offset, String labelOverride) {
+		renderDurabilityNumber(graphics, stack, x, y);
+		x += offset;
 		graphics.drawItem(stack, x, y);
-		graphics.drawItemInSlot(client.textRenderer, stack, x, y);
+		graphics.drawItemInSlot(client.textRenderer, stack, x, y, labelOverride);
+	}
+
+	private void renderDurabilityNumber(GuiGraphics graphics, ItemStack stack, int x, int y) {
+		boolean showDurability = showDurabilityNumber.get();
+		boolean showMaxDurability = showMaxDurabilityNumber.get();
+		if (stack.isEmpty() || !(showMaxDurability || showDurability) || stack.getMaxDamage() == 0) {
+			return;
+		}
+		String text = showDurability && showMaxDurability ? (stack.getMaxDamage() - stack.getDamage()) + "/" + stack.getMaxDamage() : String.valueOf((showDurability ? stack.getMaxDamage() - stack.getDamage() : stack.getMaxDamage()));
+		int textY = y + 10 - client.textRenderer.fontHeight / 2;
+		graphics.drawShadowedText(client.textRenderer, text, x, textY, customDurabilityNumColor.get() ? durabilityNumColor.get().toInt() : stack.getItemBarColor());
 	}
 
 	@Override
 	public void renderPlaceholderComponent(GuiGraphics graphics, float delta) {
+		int width = 20;
+		int height = 100;
+		boolean boundsChanged = false;
+		boolean showDurability = showDurabilityNumber.get();
+		boolean showMaxDurability = showMaxDurabilityNumber.get();
+		int labelWidth = showDurability || showMaxDurability ? Arrays.stream(placeholderStacks)
+			.map(stack -> showDurability && showMaxDurability ? (stack.getMaxDamage() - stack.getDamage()) + "/" + stack.getMaxDamage() : String.valueOf((showDurability ? stack.getMaxDamage() - stack.getDamage() : stack.getMaxDamage())))
+			.mapToInt(text -> client.textRenderer.getWidth(text) + 2).max().orElse(0) : 0;
+		width += labelWidth;
+		if (width != getWidth()) {
+			setWidth(width);
+			boundsChanged = true;
+		}
 		DrawPosition pos = getPos();
-		int lastY = 2 + (4 * 20);
-		renderItem(graphics, placeholderStacks[4], pos.x() + 2, pos.y() + lastY);
-		lastY = lastY - 20;
+		MainHandItemPosition mainHandItemTop = mainHandItemPosition.get();
+		if (mainHandItemTop == MainHandItemPosition.DISABLED) {
+			height -= 20;
+		}
+		if (height != getHeight()) {
+			setHeight(height);
+			boundsChanged = true;
+		}
+		if (boundsChanged) {
+			onBoundsUpdate();
+		}
+		int lastY = 2 + (height-20);
+		if (mainHandItemTop == MainHandItemPosition.BOTTOM) {
+			renderItem(graphics, placeholderStacks[4], pos.x() + 2, pos.y() + lastY, labelWidth, null);
+			lastY = lastY - 20;
+		}
 		for (int i = 0; i <= 3; i++) {
 			ItemStack item = placeholderStacks[i];
-			renderItem(graphics, item, pos.x() + 2, lastY + pos.y());
+			renderItem(graphics, item, pos.x() + 2, lastY + pos.y(), labelWidth, null);
 			lastY = lastY - 20;
+		}
+		if (mainHandItemTop == MainHandItemPosition.TOP) {
+			renderItem(graphics, placeholderStacks[4], pos.x() + 2, pos.y() + lastY, labelWidth, null);
 		}
 	}
 
@@ -117,6 +210,28 @@ public class ArmorHud extends TextHudEntry {
 	public List<Option<?>> getConfigurationOptions() {
 		List<Option<?>> options = super.getConfigurationOptions();
 		options.add(showProtLvl);
+		options.add(showDurabilityNumber);
+		options.add(showMaxDurabilityNumber);
+		options.add(customDurabilityNumColor);
+		options.add(durabilityNumColor);
+		options.add(anchor);
+		options.add(mainHandItemPosition);
 		return options;
+	}
+
+	public AnchorPoint getAnchor() {
+		return anchor.get();
+	}
+
+	private enum MainHandItemPosition {
+		BOTTOM,
+		TOP,
+		DISABLED,
+		;
+
+		@Override
+		public String toString() {
+			return "armorhud.main_hand_item_position."+super.toString().toLowerCase(Locale.ROOT);
+		}
 	}
 }

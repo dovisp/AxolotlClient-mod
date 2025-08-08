@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -222,8 +222,8 @@ public abstract class InGameHudMixin {
 	}
 
 	@Inject(method = "renderVignetteOverlay", at = @At("HEAD"), cancellable = true)
-	private void axolotlclient$removeVignette(Entity entity, CallbackInfo ci){
-		if(AxolotlClient.CONFIG.removeVignette.get()){
+	private void axolotlclient$removeVignette(Entity entity, CallbackInfo ci) {
+		if (AxolotlClient.CONFIG.removeVignette.get()) {
 			ci.cancel();
 		}
 	}

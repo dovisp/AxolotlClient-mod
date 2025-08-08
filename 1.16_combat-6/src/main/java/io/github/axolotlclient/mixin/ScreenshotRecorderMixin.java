@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -25,29 +25,19 @@ package io.github.axolotlclient.mixin;
 import java.io.File;
 import java.util.function.Consumer;
 
+import com.llamalad7.mixinextras.sugar.Local;
 import io.github.axolotlclient.modules.screenshotUtils.ScreenshotUtils;
-import net.minecraft.client.texture.NativeImage;
 import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.Redirect;
 
 @Mixin(net.minecraft.client.util.ScreenshotUtils.class)
 public abstract class ScreenshotRecorderMixin {
 
-	private static File currentFile;
-
-	@Inject(method = "method_1661", at = @At("HEAD"))
-	private static void axolotlclient$getFile(NativeImage nativeImage, File file, Consumer<Text> consumer, CallbackInfo ci) {
-		currentFile = file;
-	}
-
-	@SuppressWarnings("unchecked")
-	@ModifyArg(method = "method_1661", at = @At(value = "INVOKE", target = "Ljava/util/function/Consumer;accept(Ljava/lang/Object;)V"))
-	private static <T> T axolotlclient$onScreenShotTaken(T t) {
-		return (T) ScreenshotUtils.getInstance().onScreenshotTaken((MutableText) t, currentFile);
+	// for some reason @WrapOperation doesn't like injecting at <init>
+	@Redirect(method = "method_1661", at = @At(value = "INVOKE", target = "Ljava/util/function/Consumer;accept(Ljava/lang/Object;)V", ordinal = 0))
+	private static void axolotlclient$onScreenshotSaveSuccess(Consumer<MutableText> instance, Object t, @Local(argsOnly = true) File target) {
+		instance.accept(ScreenshotUtils.getInstance().onScreenshotTaken((MutableText) t, target));
 	}
 }

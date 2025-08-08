@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -22,13 +22,18 @@
 
 package io.github.axolotlclient.modules.hypixel.nickhider;
 
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.OptionCategory;
-import io.github.axolotlclient.AxolotlClientConfig.options.StringOption;
+import java.util.ArrayList;
+import java.util.List;
+
+import io.github.axolotlclient.AxolotlClientConfig.api.options.OptionCategory;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.BooleanOption;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.StringOption;
+import io.github.axolotlclient.api.util.BiContainer;
 import io.github.axolotlclient.modules.hypixel.AbstractHypixelMod;
 import lombok.Getter;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.entity.living.player.PlayerEntity;
+import net.minecraft.text.BaseText;
 import net.minecraft.text.LiteralText;
 import net.minecraft.text.Text;
 
@@ -36,15 +41,13 @@ public class NickHider implements AbstractHypixelMod {
 
 	@Getter
 	private static final NickHider Instance = new NickHider();
-
-	private final OptionCategory category = new OptionCategory("nickhider");
-
-	public StringOption hiddenNameSelf = new StringOption("hiddenNameSelf", "You");
-	public StringOption hiddenNameOthers = new StringOption("hiddenNameOthers", "Player");
-	public BooleanOption hideOwnName = new BooleanOption("hideOwnName", false);
-	public BooleanOption hideOtherNames = new BooleanOption("hideOtherNames", false);
-	public BooleanOption hideOwnSkin = new BooleanOption("hideOwnSkin", false);
-	public BooleanOption hideOtherSkins = new BooleanOption("hideOtherSkins", false);
+	public final StringOption hiddenNameSelf = new StringOption("hiddenNameSelf", "You");
+	public final StringOption hiddenNameOthers = new StringOption("hiddenNameOthers", "Player");
+	public final BooleanOption hideOwnName = new BooleanOption("hideOwnName", false);
+	public final BooleanOption hideOtherNames = new BooleanOption("hideOtherNames", false);
+	public final BooleanOption hideOwnSkin = new BooleanOption("hideOwnSkin", false);
+	public final BooleanOption hideOtherSkins = new BooleanOption("hideOtherSkins", false);
+	private final OptionCategory category = OptionCategory.create("nickhider");
 
 	@Override
 	public void init() {
@@ -63,22 +66,51 @@ public class NickHider implements AbstractHypixelMod {
 
 	public Text editMessage(Text message) {
 		if (hideOwnName.get() || hideOtherNames.get()) {
-			String msg = message.asFormattedString();
-			String playerName = MinecraftClient.getInstance().player.getGameProfile().getName();
-			if (hideOwnName.get() && msg.contains(playerName)) {
-				msg = msg.replaceAll(playerName, hiddenNameSelf.get());
+			String msg = message.getString();
+
+			List<BiContainer<String, String>> replacements = new ArrayList<>();
+			if (Minecraft.getInstance().player != null) {
+				String playerName = Minecraft.getInstance().player.getName();
+				if (hideOwnName.get() && msg.contains(playerName)) {
+					replacements.add(BiContainer.of(playerName, hiddenNameSelf.get()));
+				}
 			}
 
-			if (hideOtherNames.get()) {
-				for (PlayerEntity player : MinecraftClient.getInstance().world.playerEntities) {
-					if (msg.contains(player.getGameProfile().getName())) {
-						msg = msg.replaceAll(player.getGameProfile().getName(), hiddenNameOthers.get());
+			if (hideOtherNames.get() && Minecraft.getInstance().world != null) {
+				for (PlayerEntity player : Minecraft.getInstance().world.players) {
+					if (player == Minecraft.getInstance().player) {
+						continue;
+					}
+					if (msg.contains(player.getName())) {
+						replacements.add(BiContainer.of(player.getName(), hiddenNameOthers.get()));
 					}
 				}
 			}
 
-			return new LiteralText(msg).setStyle(message.getStyle().deepCopy());
+			if (!replacements.isEmpty()) {
+				BaseText editedMessage = new LiteralText("");
+				editComponent(message, replacements, editedMessage);
+				return editedMessage;
+			}
 		}
 		return message;
+	}
+
+	public Text editComponent(Text c, String find, String replace) {
+		BaseText edited = new LiteralText("");
+		c.iterator().forEachRemaining(text -> {
+			edited.append(new LiteralText(text.getContent().replace(find, replace)).setStyle(text.getStyle()));
+		});
+		return edited;
+	}
+
+	private void editComponent(Text component, List<BiContainer<String, String>> replacements, BaseText edited) {
+		component.iterator().forEachRemaining(text -> {
+			String edit = text.getContent();
+			for (var entry : replacements) {
+				edit = edit.replace(entry.getLeft(), entry.getRight());
+			}
+			edited.append(new LiteralText(edit).setStyle(text.getStyle()));
+		});
 	}
 }

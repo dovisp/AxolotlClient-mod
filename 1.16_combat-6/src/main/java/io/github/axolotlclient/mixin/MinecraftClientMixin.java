@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -25,7 +25,6 @@ package io.github.axolotlclient.mixin;
 import io.github.axolotlclient.AxolotlClient;
 import io.github.axolotlclient.modules.blur.MenuBlur;
 import io.github.axolotlclient.modules.rpc.DiscordRPC;
-import io.github.axolotlclient.util.NetworkHelper;
 import io.github.axolotlclient.util.events.Events;
 import io.github.axolotlclient.util.events.impl.WorldLoadEvent;
 import net.fabricmc.loader.api.FabricLoader;
@@ -69,10 +68,7 @@ public abstract class MinecraftClientMixin {
 
 	@Inject(method = "stop", at = @At("HEAD"))
 	public void axolotlclient$stop(CallbackInfo ci) {
-		if (AxolotlClient.CONFIG.showBadges.get()) {
-			NetworkHelper.setOffline();
-		}
-		DiscordRPC.shutdown();
+		DiscordRPC.getInstance().shutdown();
 	}
 
 	@Inject(method = "openScreen", at = @At("HEAD"))
@@ -90,5 +86,10 @@ public abstract class MinecraftClientMixin {
 	@Inject(method = "joinWorld", at = @At("HEAD"))
 	private void axolotlclient$onWorldLoad(ClientWorld world, CallbackInfo ci) {
 		Events.WORLD_LOAD_EVENT.invoker().invoke(new WorldLoadEvent(world));
+	}
+
+	@Inject(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/MinecraftClient;openScreen(Lnet/minecraft/client/gui/screen/Screen;)V"))
+	private void onGameLoad(CallbackInfo ci) {
+		Events.GAME_LOAD_EVENT.invoker().invoke((MinecraftClient) (Object) this);
 	}
 }

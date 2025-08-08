@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -24,8 +24,8 @@ package io.github.axolotlclient.modules.hud.gui.hud.item;
 
 import java.util.List;
 
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
-import io.github.axolotlclient.AxolotlClientConfig.options.Option;
+import io.github.axolotlclient.AxolotlClientConfig.api.options.Option;
+import io.github.axolotlclient.AxolotlClientConfig.impl.options.BooleanOption;
 import io.github.axolotlclient.modules.hud.gui.entry.TextHudEntry;
 import io.github.axolotlclient.modules.hud.util.DrawPosition;
 import io.github.axolotlclient.modules.hud.util.ItemUtil;
@@ -55,7 +55,7 @@ public class ArrowHud extends TextHudEntry {
 	private ItemStack currentArrow = arrowTypes[0];
 
 	public ArrowHud() {
-		super(20, 30, true);
+		super(20, 22, true);
 	}
 
 	@Override
@@ -73,17 +73,15 @@ public class ArrowHud extends TextHudEntry {
 	@Override
 	public void renderComponent(GuiGraphics graphics, float delta) {
 		DrawPosition pos = getPos();
-		drawCenteredString(graphics, client.textRenderer, String.valueOf(arrows), pos.x() + getWidth() / 2,
-			pos.y() + getHeight() - 10, textColor.get(), shadow.get());
+		graphics.drawItemInSlot(client.textRenderer, currentArrow, pos.x() + 2, pos.y() + 2, String.valueOf(arrows));
 		graphics.drawItem(currentArrow, pos.x() + 2, pos.y() + 2);
 	}
 
 	@Override
 	public void renderPlaceholderComponent(GuiGraphics graphics, float delta) {
 		DrawPosition pos = getPos();
-		drawCenteredString(graphics, client.textRenderer, "64", pos.x() + getWidth() / 2, pos.y() + getHeight() - 10,
-			textColor.get(), shadow.get());
-		ItemUtil.renderGuiItemModel(getScale(), arrowTypes[0], pos.x() + 2, pos.y() + 2);
+		graphics.drawItem(arrowTypes[0], pos.x() + 2, pos.y() + 2);
+		graphics.drawItemInSlot(client.textRenderer, arrowTypes[0], pos.x() + 2, pos.y() + 2, "64");
 	}
 
 	@Override

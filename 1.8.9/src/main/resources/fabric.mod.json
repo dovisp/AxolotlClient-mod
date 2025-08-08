@@ -3,7 +3,7 @@
 	"id": "axolotlclient",
 	"version": "${version}",
 	"name": "AxolotlClient",
-	"description": "Mod for AxolotlClient",
+	"description": "Free & Open-Source Minecraft Mod for use in PvP and other Scenarios",
 	"authors": [
 		"moehreag"
 	],
@@ -15,7 +15,8 @@
 	],
 	"contact": {
 		"homepage": "https://axolotlclient.github.io/",
-		"sources": "https://github.com/AxolotlClient/AxolotlClient-mod/tree/1.8.9"
+		"sources": "https://github.com/AxolotlClient/AxolotlClient-mod/",
+		"issues": "https://github.com/AxolotlClient/AxolotlClient-mod/issues"
 	},
 	"license": "LGPL-3.0-or-later",
 	"icon": "assets/axolotlclient/icon.png",
@@ -24,17 +25,26 @@
 	"entrypoints": {
 		"client": [
 			"io.github.axolotlclient.AxolotlClient"
+		],
+		"modmenu": [
+			"io.github.axolotlclient.config.modmenu.ModMenuCompat"
 		]
 	},
 	"mixins": [
-		"axolotlclient.mixins.json"
+		"axolotlclient.mixins.json",
+		"axolotlclient.e4mc.mixins.json"
 	],
 	"custom": {
 		"modmenu:clientsideOnly": true
 	},
 	"depends": {
-		"fabricloader": ">=0.14.7",
+		"fabricloader": ">=0.15.0",
 		"minecraft": "1.8.9",
-		"legacy-fabric-api": ">=1.7.0"
+		"osl-resource-loader": "*",
+		"osl-lifecycle-events": "*",
+		"osl-keybinds": "*",
+		"osl-entrypoints": "*",
+		"axolotlclientconfig": "*",
+		"axolotlclient-common": "*"
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2021-2023 moehreag <moehreag@gmail.com> & Contributors
+ * Copyright © 2024 moehreag <moehreag@gmail.com> & Contributors
  *
  * This file is part of AxolotlClient.
  *
@@ -23,81 +23,81 @@
 package io.github.axolotlclient.modules.screenshotUtils;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import com.google.common.collect.Lists;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
-import io.github.axolotlclient.util.Logger;
-import io.github.axolotlclient.util.NetworkUtil;
-import lombok.experimental.UtilityClass;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.util.EntityUtils;
+import io.github.axolotlclient.AxolotlClientCommon;
+import io.github.axolotlclient.api.API;
+import io.github.axolotlclient.api.Constants;
+import io.github.axolotlclient.api.Request;
 
-@UtilityClass
-public class ImageNetworking {
+public abstract class ImageNetworking {
 
-	public String upload(String data, String url, CloseableHttpClient client, Logger logger) throws IOException {
+	private static final Pattern URL_PATTERN = Pattern.compile("(?:.+/)?(\\d+)(?:/?.+)?");
 
-		JsonElement el = NetworkUtil.getRequest(url, client);
-		if (el != null) {
-			JsonObject initGet = el.getAsJsonObject();
-			String tempId = initGet.get("id").getAsString();
-			int chunkSize = initGet.get("chunkSize").getAsInt();
-			int maxChunks = initGet.get("maxChunks").getAsInt();
+	public abstract void uploadImage(Path file);
 
-			List<String> dataList = new ArrayList<>();
-
-			for (char c : data.toCharArray()) {
-				dataList.add(String.valueOf(c));
-			}
-
-			List<String> chunks = new ArrayList<>();
-			Lists.partition(dataList, chunkSize).forEach(list -> chunks.add(String.join("", list)));
-
-			if (chunks.size() > maxChunks) {
-				throw new IllegalStateException("Too much Data!");
-			}
-
-			long index = 0;
-			for (String content : chunks) {
-				RequestBuilder requestBuilder = RequestBuilder.post().setUri(url + "/" + tempId);
-				requestBuilder.setHeader("Content-Type", "application/json");
-				requestBuilder.setEntity(new StringEntity("{" +
-					"\"index\":" + index + "," +
-					"  \"content\": \"" + content + "\"" +
-					"}"));
-				logger.debug(EntityUtils.toString(client.execute(requestBuilder.build()).getEntity()));
-				index += content.getBytes(StandardCharsets.UTF_8).length;
-			}
-
-			logger.debug("Finishing Stream... tempId was: " + tempId);
-
-			RequestBuilder requestBuilder = RequestBuilder.post().setUri(url + "/" + tempId + "/end");
-			requestBuilder.setHeader("Content-Type", "application/json");
-
-			requestBuilder.setEntity(new StringEntity("{\"language\": \"image:png/base64\", \"expiration\": 168, \"password\":\"\"}"));
-
-			HttpResponse response = client.execute(requestBuilder.build());
-
-			String body = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-			try {
-				JsonElement element = new JsonParser().parse(body);
-
-				return element.getAsJsonObject().get("pasteId").getAsString();
-			} catch (JsonParseException e) {
-				logger.warn("Not Json data: \n" + body);
-			}
-		} else {
-			logger.error("Server Error!");
+	protected CompletableFuture<String> upload(Path file) {
+		try {
+			return upload(file.getFileName().toString(), Files.readAllBytes(file));
+		} catch (IOException e) {
+			AxolotlClientCommon.getInstance().getLogger().error("Failed to upload image", e);
+			return CompletableFuture.completedFuture("");
 		}
-		return "";
+	}
+
+	protected CompletableFuture<String> upload(String name, byte[] data) {
+		return API.getInstance().post(Request.Route.IMAGE.builder().path(name).rawBody(data).build())
+			.thenApply(response -> {
+				if (response.isError()) {
+					AxolotlClientCommon.getInstance().getLogger().error("Failed to upload image, server responded with " + response);
+					return "";
+				}
+				return idToUrl(response.getPlainBody());
+			});
+	}
+
+	protected static String idToUrl(String id) {
+		return Request.Route.IMAGE.builder().path(id).path("view").build().resolve().toString();
+	}
+
+	protected static Optional<String> urlToId(String url) {
+		if (url.contains("/") && !url.startsWith(Constants.API_URL)) {
+			return Optional.empty();
+		}
+		Matcher matcher = URL_PATTERN.matcher(url);
+		if (!matcher.matches()) {
+			return Optional.empty();
+		}
+		return Optional.of(matcher.group(1));
+	}
+
+	protected static Optional<String> ensureUrl(String urlOrId) {
+		return urlToId(urlOrId).map(ImageNetworking::idToUrl);
+	}
+
+	protected CompletableFuture<ImageData> download(String url) {
+		Optional<String> id = urlToId(url);
+		return id.map(s -> API.getInstance().get(Request.Route.IMAGE.builder().requiresAuthentication(false).path(s).build())
+			.thenApply(res -> {
+				if (res.isError()) {
+					return ImageData.EMPTY;
+				}
+				String name = res.getBody("filename");
+				String base64 = res.getBody("file");
+				String uploader = res.getBody("uploader");
+				Instant sharedAt = res.getBody("shared_at", Instant::parse);
+				return new ImageData(name, Base64.getDecoder().decode(base64), uploader, sharedAt);
+			})).orElseGet(() -> CompletableFuture.completedFuture(ImageData.EMPTY));
+	}
+
+	public record ImageData(String name, byte[] data, String uploader, Instant sharedAt) {
+		public static final ImageData EMPTY = new ImageData("", new byte[0], null, null);
 	}
 }
