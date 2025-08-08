@@ -24,14 +24,14 @@ package io.github.axolotlclient.util;
 
 import java.util.function.Supplier;
 
-import io.github.axolotlclient.AxolotlClientConfig.options.BooleanOption;
+import io.github.axolotlclient.util.options.ForceableBooleanOption;
 
 public class FeatureDisabler {
 	public static void init() {
 		return;
 	}
 
-	private static void setServers(BooleanOption option, Supplier<Boolean> condition, String... servers) {
+	private static void setServers(ForceableBooleanOption option, Supplier<Boolean> condition, String... servers) {
 		return;
 	}
 
@@ -47,7 +47,7 @@ public class FeatureDisabler {
 		return;
 	}
 
-	private static void disableOption(BooleanOption option, String[] servers, String currentServer) {
+	private static void disableOption(ForceableBooleanOption option, String[] servers, String currentServer) {
 		return;
 	}
 }
